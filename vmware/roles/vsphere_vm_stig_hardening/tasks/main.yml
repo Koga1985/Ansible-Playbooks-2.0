@@ -1,0 +1,147 @@
+---
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+      - vcenter_datacenter | length > 0
+      - vm_name | length > 0
+    fail_msg: "vCenter connection (host/user/pass/DC) and vm_name are required."
+
+- name: Gather VM facts
+  community.vmware.vmware_guest_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    name: "{{ vm_name }}"
+    schema: "vsphere"
+  delegate_to: localhost
+  register: vm_info
+
+- name: Fail if VM not found
+  ansible.builtin.fail:
+    msg: "VM '{{ vm_name }}' not found in datacenter '{{ vcenter_datacenter }}'."
+  when: vm_info.instance is not defined
+
+# ----------------------------
+# Advanced configuration keys
+# ----------------------------
+- name: Build extraConfig map per switches
+  ansible.builtin.set_fact:
+    vm_extra_config: >-
+      {{
+        dict(
+          # Copy/Paste + Drag&Drop
+          ('isolation.tools.copy.disable', (stig_disable_copy_paste | bool) | ternary('true','false')),
+          ('isolation.tools.paste.disable', (stig_disable_copy_paste | bool) | ternary('true','false')),
+          ('isolation.tools.dnd.disable', (stig_disable_dnd | bool) | ternary('true','false')),
+          # HGFS / Shared folders
+          ('isolation.tools.hgfsServerSet.disable', (stig_disable_hgfs | bool) | ternary('true','false')),
+          # VNC console
+          ('RemoteDisplay.vnc.enabled', (stig_disable_vnc | bool) | ternary('false','false')),
+          # Device hotplug
+          ('devices.hotplug', (stig_disable_device_hotplug | bool) | ternary('false','true')),
+          # Disk shrink/wiper
+          ('isolation.tools.diskShrink.disable', (stig_disable_disk_shrink_wiper | bool) | ternary('true','false')),
+          ('isolation.tools.diskWiper.disable', (stig_disable_disk_shrink_wiper | bool) | ternary('true','false')),
+          # GUI options and guest initiated actions
+          ('isolation.tools.setGUIOptions.enable', (stig_disable_gui_options | bool) | ternary('false','true')),
+          ('isolation.tools.ghi.launchmenu.change', (stig_disable_console_interrupt | bool) | ternary('false','true')),
+          ('isolation.tools.guestInitiatedRestart.exit', (stig_disable_guest_bounce | bool) | ternary('false','true')),
+          # Hot-add
+          ('vcpu.hotadd', (stig_disable_cpu_hotadd | bool) | ternary('false','true')),
+          ('mem.hotadd', (stig_disable_mem_hotadd | bool) | ternary('false','true'))
+        )
+      }}
+
+- name: Apply advanced config (extraConfig)
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    name: "{{ vm_name }}"
+    state: present
+    annotation: "{{ stig_banner_annotation | default(omit) }}"
+    customvalues: >-
+      {{
+        vm_extra_config | dict2items(key_name='key', value_name='value')
+      }}
+  delegate_to: localhost
+
+# ----------------------------
+# Firmware/Secure Boot (EFI)
+# ----------------------------
+- name: Ensure EFI firmware and Secure Boot (if enabled)
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    name: "{{ vm_name }}"
+    state: present
+    hardware:
+      boot_firmware: "{{ 'efi' if stig_require_efi_secure_boot else omit }}"
+      secure_boot: "{{ true if stig_require_efi_secure_boot else omit }}"
+  when: stig_require_efi_secure_boot | bool
+  delegate_to: localhost
+
+# ----------------------------
+# Remove/disable risky devices
+# ----------------------------
+- name: Remove CD-ROM device (if requested)
+  community.vmware.vmware_guest_cdrom:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    name: "{{ vm_name }}"
+    state: absent
+  when: stig_remove_cdrom | bool
+  delegate_to: localhost
+
+- name: Remove Floppy device (if requested)
+  community.vmware.vmware_guest_floppy:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    name: "{{ vm_name }}"
+    state: absent
+  when: stig_remove_floppy | bool
+  delegate_to: localhost
+
+- name: Disconnect serial/parallel at power on (if present)
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    name: "{{ vm_name }}"
+    state: present
+    hardware:
+      serial:
+        - type: "device"
+          start_connected: false
+      parallel:
+        - start_connected: false
+  when: stig_disconnect_parallel_serial | bool
+  delegate_to: localhost
+
+- name: Report applied hardening
+  ansible.builtin.debug:
+    msg:
+      vm: "{{ vm_name }}"
+      datacenter: "{{ vcenter_datacenter }}"
+      efi_secureboot: "{{ stig_require_efi_secure_boot }}"
+      removed_cdrom: "{{ stig_remove_cdrom }}"
+      removed_floppy: "{{ stig_remove_floppy }}"
+      advanced_keys: "{{ vm_extra_config | list }}"

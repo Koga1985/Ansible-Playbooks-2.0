@@ -1,0 +1,37 @@
+# Target VM (must already exist in vCenter/ESXi)
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+vcenter_datacenter: ""
+vm_name: ""
+
+# Optional folder/cluster/resource placement context (not changing placement; used by modules)
+vcenter_folder: ""
+vcenter_cluster: ""
+vcenter_esxi_host: ""   # when managing directly on a host or to disambiguate
+
+# ---- STIG/HARDENING SWITCHES ----
+# Advanced config (extraConfig) hardening flags (common DISA VMW-VM-*)
+stig_disable_copy_paste: true          # isolation.tools.copy.disable / paste.disable
+stig_disable_dnd: true                 # isolation.tools.dnd.disable
+stig_disable_hgfs: true                # disable shared folders interactions
+stig_disable_vnc: true                 # RemoteDisplay.vnc.enabled = false
+stig_disable_device_hotplug: true      # devices.hotplug = false
+stig_disable_disk_shrink_wiper: true   # isolation.tools.diskShrink/ diskWiper.disable = true
+stig_disable_gui_options: true         # isolation.tools.setGUIOptions.enable = false
+stig_disable_console_interrupt: true   # isolation.tools.ghi.launchmenu.change = false
+stig_disable_guest_bounce: true        # isolation.tools.guestInitiatedRestart.exit = false
+
+# Hardware/firmware
+stig_require_efi_secure_boot: true     # switch VM to EFI and enable Secure Boot (where supported)
+stig_remove_floppy: true
+stig_remove_cdrom: true
+stig_disconnect_parallel_serial: true  # ensure not connected at power on
+
+# Optional: set annotation banner
+stig_banner_annotation: "Managed by Ansible: STIG baseline applied"
+
+# Optional: lock CPU/Mem hot-add (set to false to allow; true to disable)
+stig_disable_cpu_hotadd: true
+stig_disable_mem_hotadd: true

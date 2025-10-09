@@ -1,0 +1,14 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Apply DISA-aligned STIG/hardening settings to a vSphere Virtual Machine (advanced config, firmware/secure boot, device removal).
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["all"]
+    - name: Ubuntu
+      versions: ["all"]
+    - name: Windows
+      versions: ["all"]
+  galaxy_tags: ["vmware","vsphere","stig","hardening","security","vm"]
+dependencies: []
