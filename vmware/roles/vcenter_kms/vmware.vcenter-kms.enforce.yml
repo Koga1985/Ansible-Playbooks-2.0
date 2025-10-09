@@ -1,0 +1,20 @@
+---
+- hosts: localhost
+  gather_facts: false
+  roles:
+    - role: vcenter_kms
+      vars:
+        vcenter_hostname: "vcenter.example.local"
+        vcenter_username: "{{ lookup('env','VCENTER_USERNAME') }}"
+        vcenter_password: "{{ lookup('env','VCENTER_PASSWORD') }}"
+        vcenter_validate_certs: false
+        key_providers:
+          - name: "corp-kp"
+            state: present
+            mark_default: true
+            kms_info:
+              - { kms_name: "corp-kms1", kms_ip: "10.10.10.50", kms_port: 5696 }
+            trust:
+              upload_client_cert: "/secure/vc_client_cert.pem"
+              upload_client_key: "/secure/vc_client_key.pem"
+        gather_info_after: true
