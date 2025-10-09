@@ -1,0 +1,73 @@
+# Import vSphere object permissions from a JSON export
+# (compatible with the export file we built earlier).
+#
+# Vars to set:
+#   vcenter_hostname, vcenter_username, vcenter_password
+#   import_json_path (path to exported JSON; default ./vsphere_permissions.json)
+#
+# Notes:
+# - Recreates/updates local roles found in JSON (name + privileges).
+# - Applies object permissions (principal ↔ role) with propagate flag.
+# - Skips if arrays are empty.
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    import_json_path: "{{ import_json_path | default('./vsphere_permissions.json') }}"
+
+- name: Read exported permissions JSON
+  ansible.builtin.slurp:
+    src: "{{ import_json_path }}"
+  register: _perm_json_raw
+  delegate_to: localhost
+
+- name: Parse JSON
+  ansible.builtin.set_fact:
+    _perm_json: "{{ _perm_json_raw.content | b64decode | from_json }}"
+    _perm_roles: "{{ (_perm_json.roles | default([])) | list }}"
+    _perm_rows: "{{ (_perm_json.rows  | default([])) | list }}"
+
+# ---------- Recreate/update local roles (custom roles) ----------
+# Skip system roles if your export includes them without a privilege list.
+- name: Ensure local roles exist with privileges
+  community.vmware.vmware_local_role_manager:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    local_role_name: "{{ item.name }}"
+    state: present
+    privileges: "{{ item.privileges | default(omit) }}"
+  loop: "{{ _perm_roles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.name is defined
+  delegate_to: localhost
+  # Creates/updates local roles; if 'privileges' omitted for system roles,
+  # vCenter keeps them unchanged. :contentReference[oaicite:2]{index=2}
+
+# ---------- Apply object permissions ----------
+# Each row expected to have: object_type, object_name, principal, role_name, propagate
+- name: Assign permissions to objects
+  community.vmware.vmware_object_role_permission:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    object_type: "{{ item.object_type }}"
+    object_name: "{{ item.object_name }}"
+    principal: "{{ item.principal }}"
+    role: "{{ item.role_name }}"
+    propagate: "{{ (item.propagate | default(true)) | bool }}"
+    state: present
+  loop: "{{ _perm_rows }}"
+  loop_control:
+    label: "{{ item.object_type }} {{ item.object_name }} -> {{ item.principal }} : {{ item.role_name }}"
+  delegate_to: localhost
+  # Applies object-level permissions; this module handles present/absent & propagate. :contentReference[oaicite:3]{index=3}
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      roles_processed: "{{ _perm_roles | length }}"
+      permissions_applied: "{{ _perm_rows | length }}"
