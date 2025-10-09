@@ -1,0 +1,152 @@
+# Retrieve vSphere VM information and export to JSON + CSV.
+#
+# Set these vars (via vars, group_vars, or CLI -e):
+#   vcenter_hostname: "vcenter.example.local"
+#   vcenter_username: "{{ lookup('env','VCENTER_USERNAME') }}"
+#   vcenter_password: "{{ lookup('env','VCENTER_PASSWORD') }}"
+#   vcenter_validate_certs: false
+#
+# Optional filters (any can be blank to skip):
+#   vcenter_datacenter: "DC1"
+#   vcenter_cluster: ""
+#   vcenter_folder: ""                 # e.g. "/DC1/vm/Production"
+#   esxi_hostname: ""                  # query only VMs on this host
+#   vm_name_regex: ""                  # e.g. "^prod-|win$"
+#
+# Output paths (controller filesystem):
+#   vm_info_json_path: "./vm_info.json"
+#   vm_info_csv_path:  "./vm_info.csv"
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    vm_info_json_path: "{{ vm_info_json_path | default('./vm_info.json') }}"
+    vm_info_csv_path:  "{{ vm_info_csv_path  | default('./vm_info.csv') }}"
+    vcenter_datacenter: "{{ vcenter_datacenter | default('') }}"
+    vcenter_cluster: "{{ vcenter_cluster | default('') }}"
+    vcenter_folder: "{{ vcenter_folder | default('') }}"
+    esxi_hostname: "{{ esxi_hostname | default('') }}"
+    vm_name_regex: "{{ vm_name_regex | default('') }}"
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+    fail_msg: "vCenter hostname/username/password are required."
+
+# Pull VM inventory (optionally scoping to DC/cluster/folder/host)
+- name: Gather VM inventory
+  community.vmware.vmware_vm_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ (vcenter_datacenter | length > 0) | ternary(vcenter_datacenter, omit) }}"
+    cluster:    "{{ (vcenter_cluster    | length > 0) | ternary(vcenter_cluster,    omit) }}"
+    folder:     "{{ (vcenter_folder     | length > 0) | ternary(vcenter_folder,     omit) }}"
+    esxi_hostname: "{{ (esxi_hostname   | length > 0) | ternary(esxi_hostname,      omit) }}"
+  delegate_to: localhost
+  register: vm_info_raw
+
+# Optional name filtering (regex on VM name)
+- name: Filter VM list by name regex (if provided)
+  ansible.builtin.set_fact:
+    vm_info_filtered: >-
+      {{
+        (vm_info_raw.virtual_machines | default([]))
+        | selectattr('guest_name','defined')
+        | (vm_name_regex | length > 0
+            | ternary(selectattr('guest_name','match', vm_name_regex), list))
+        | list
+      }}
+
+# Build flattened rows for CSV/JSON (robust to missing keys)
+- name: Normalize VM rows
+  ansible.builtin.set_fact:
+    vm_rows: >-
+      {%- set rows = [] -%}
+      {%- for v in (vm_info_filtered | default([])) -%}
+      {%- set _ = rows.append({
+            'name':           (v.guest_name       | default(v.name | default(''))),
+            'power_state':    (v.power_state      | default('')),
+            'os_fullname':    (v.guest_fullname   | default(v.config.guestFullName | default(''))),
+            'ip_address':     (v.ip_address       | default(v.guest_ip_address | default(''))),
+            'tools_status':   (v.tools_running_status | default(v.guest_tools_status | default(''))),
+            'cpu':            (v.cpu              | default(v.config.hardware.numCPU | default(''))),
+            'memory_mb':      (v.memory_mb        | default(v.config.hardware.memoryMB | default(''))),
+            'datacenter':     (v.datacenter       | default('')),
+            'cluster':        (v.cluster          | default('')),
+            'esxi_host':      (v.esxi_hostname    | default('')),
+            'datastores':     ((v.datastores | default([])) | join(';')),
+            'path':           (v.path             | default('')),
+            'uuid':           (v.uuid             | default('')),
+            'moid':           (v.moid             | default('')),
+            'annotation':     (v.annotation       | default('')),
+            'snapshot':       ((v.snapshots | default([])) | length > 0)
+        }) -%}
+      {%- endfor -%}
+      {{ rows }}
+
+- name: Compose JSON export
+  ansible.builtin.set_fact:
+    vm_info_export:
+      generated_at: "{{ ansible_date_time.iso8601 }}"
+      vcenter: "{{ vcenter_hostname }}"
+      scope:
+        datacenter: "{{ vcenter_datacenter }}"
+        cluster: "{{ vcenter_cluster }}"
+        folder: "{{ vcenter_folder }}"
+        esxi_hostname: "{{ esxi_hostname }}"
+        vm_name_regex: "{{ vm_name_regex }}"
+      count: "{{ vm_rows | length }}"
+      rows: "{{ vm_rows }}"
+
+- name: Write JSON file
+  ansible.builtin.copy:
+    dest: "{{ vm_info_json_path }}"
+    content: "{{ vm_info_export | to_nice_json }}"
+    mode: '0640'
+  delegate_to: localhost
+
+- name: Render CSV lines
+  ansible.builtin.set_fact:
+    _csv_lines: >-
+      {%- set header = 'name,power_state,os_fullname,ip_address,tools_status,cpu,memory_mb,datacenter,cluster,esxi_host,datastores,path,uuid,moid,annotation,snapshot' -%}
+      {%- set lines = [header] -%}
+      {%- for r in vm_rows -%}
+      {%-   set _ = lines.append('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s' | format(
+               (r.name|default(''))|replace(',',' '),
+               (r.power_state|default(''))|replace(',',' '),
+               (r.os_fullname|default(''))|replace(',',' '),
+               (r.ip_address|default(''))|replace(',',' '),
+               (r.tools_status|default(''))|replace(',',' '),
+               (r.cpu|default('')),
+               (r.memory_mb|default('')),
+               (r.datacenter|default(''))|replace(',',' '),
+               (r.cluster|default(''))|replace(',',' '),
+               (r.esxi_host|default(''))|replace(',',' '),
+               (r.datastores|default(''))|replace(',',';'),
+               (r.path|default(''))|replace(',',' '),
+               (r.uuid|default('')),
+               (r.moid|default('')),
+               (r.annotation|default(''))|replace(',',' '),
+               (r.snapshot|default(false))
+             )) -%}
+      {%- endfor -%}
+      {{ lines | join('\n') }}
+
+- name: Write CSV file
+  ansible.builtin.copy:
+    dest: "{{ vm_info_csv_path }}"
+    content: "{{ _csv_lines }}\n"
+    mode: '0640'
+  delegate_to: localhost
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      total_vms: "{{ vm_rows | length }}"
+      json: "{{ vm_info_json_path }}"
+      csv:  "{{ vm_info_csv_path }}"
