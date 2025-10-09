@@ -1,0 +1,12 @@
+galaxy_info:
+  author: Dewain Smith
+  description: STIG/harden ESXi hosts (single host or every host in a cluster) — lockdown, services, NTP, syslog, advanced config, firewall.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["all"]
+    - name: Ubuntu
+      versions: ["all"]
+  galaxy_tags: ["vmware","vsphere","esxi","stig","hardening","security"]
+dependencies: []

@@ -1,0 +1,206 @@
+---
+- name: Validate scope
+  ansible.builtin.assert:
+    that:
+      - harden_scope in ['single','cluster']
+    fail_msg: "harden_scope must be 'single' or 'cluster'."
+
+- name: Validate inputs for single host
+  ansible.builtin.assert:
+    that:
+      - esxi_hostname | length > 0
+    fail_msg: "esxi_hostname is required for harden_scope=single."
+  when: harden_scope == 'single'
+
+- name: Validate inputs for cluster scope
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+      - vcenter_datacenter | length > 0
+      - vcenter_cluster | length > 0
+    fail_msg: "vCenter vars (host/user/pass/DC/cluster) are required for harden_scope=cluster."
+  when: harden_scope == 'cluster'
+
+# Build target hosts list
+- name: Set _targets for single host
+  ansible.builtin.set_fact:
+    _targets: ["{{ esxi_hostname }}"]
+  when: harden_scope == 'single'
+
+- name: Discover hosts in cluster
+  community.vmware.vmware_host_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ vcenter_cluster }}"
+  register: _cluster_hosts
+  delegate_to: localhost
+  when: harden_scope == 'cluster'
+
+- name: Set _targets from cluster discovery
+  ansible.builtin.set_fact:
+    _targets: "{{ _cluster_hosts.hosts | map(attribute='name') | list }}"
+  when: harden_scope == 'cluster'
+
+- name: Show target hosts
+  ansible.builtin.debug:
+    var: _targets
+
+# ---------------------- Controls ----------------------
+
+- name: Set acceptance level on each host
+  community.vmware.vmware_host_acceptance:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ item if harden_scope == 'cluster' else omit }}"
+    acceptance_level: "{{ acceptance_level }}"
+  loop: "{{ _targets }}"
+  delegate_to: localhost
+
+- name: Configure NTP servers
+  community.vmware.vmware_host_ntp:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ item if harden_scope == 'cluster' else omit }}"
+    ntp_servers: "{{ ntp_servers }}"
+    state: present
+  when: ntp_servers | length > 0
+  loop: "{{ _targets }}"
+  delegate_to: localhost
+
+- name: Ensure NTP service policy/state
+  community.vmware.vmware_host_service_manager:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ item if harden_scope == 'cluster' else omit }}"
+    service_name: "ntpd"
+    service_policy: "{{ ntp_policy }}"
+    state: "{{ (ntp_policy in ['on','automatic']) | ternary('on','off') }}"
+  when: ntp_servers | length > 0
+  loop: "{{ _targets }}"
+  delegate_to: localhost
+
+- name: Configure remote syslog
+  community.vmware.vmware_host_syslog:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ item if harden_scope == 'cluster' else omit }}"
+    syslog_config:
+      loghost: "{{ syslog_remote }}"
+    state: present
+  when: syslog_remote | length > 0
+  loop: "{{ _targets }}"
+  delegate_to: localhost
+
+- name: Set Syslog.global.logDirUnique via advanced config
+  community.vmware.vmware_host_advanced_config:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ item if harden_scope == 'cluster' else omit }}"
+    options:
+      "Syslog.global.logDirUnique": "{{ 1 if syslog_dir_unique else 0 }}"
+  loop: "{{ _targets }}"
+  delegate_to: localhost
+
+- name: Apply advanced host configuration (bulk)
+  community.vmware.vmware_host_advanced_config:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ item if harden_scope == 'cluster' else omit }}"
+    options: "{{ advanced_config }}"
+  loop: "{{ _targets }}"
+  delegate_to: localhost
+
+- name: Set SSH service policy (Lock down remote shells)
+  community.vmware.vmware_host_service_manager:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ item if harden_scope == 'cluster' else omit }}"
+    service_name: "TSM-SSH"
+    service_policy: "{{ ssh_policy }}"
+    state: "{{ (ssh_policy in ['on','automatic']) | ternary('on','off') }}"
+  loop: "{{ _targets }}"
+  delegate_to: localhost
+
+- name: Set ESXi Shell service policy
+  community.vmware.vmware_host_service_manager:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ item if harden_scope == 'cluster' else omit }}"
+    service_name: "TSM"
+    service_policy: "{{ esxi_shell_policy }}"
+    state: "{{ (esxi_shell_policy in ['on','automatic']) | ternary('on','off') }}"
+  loop: "{{ _targets }}"
+  delegate_to: localhost
+
+- name: Configure firewall rulesets (optional list)
+  community.vmware.vmware_host_firewall_manager:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ esxi_target if harden_scope == 'cluster' else omit }}"
+    rules:
+      - name: "{{ item.name }}"
+        enabled: "{{ item.enabled | default(false) }}"
+        allowed_hosts: "{{ item.allowed_hosts | default('ALL') }}"
+  vars:
+    esxi_target: "{{ inventory_hostname | default('') }}"
+  loop: "{{ firewall_rulesets }}"
+  when: firewall_rulesets | length > 0
+  delegate_to: localhost
+
+- name: Set Lockdown mode
+  community.vmware.vmware_host_lockdown:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ item if harden_scope == 'cluster' else omit }}"
+    state: "{{ 'present' if lockdown_enable else 'absent' }}"
+    lockdown_mode: "{{ 'lockdown_strict' if lockdown_mode == 'strict' else 'lockdown_normal' }}"
+    exception_users: "{{ lockdown_exception_users | default([]) }}"
+  loop: "{{ _targets }}"
+  delegate_to: localhost
+
+- name: Exit maintenance mode (if requested)
+  community.vmware.vmware_maintenancemode:
+    hostname: "{{ esxi_hostname if harden_scope == 'single' else vcenter_hostname }}"
+    username: "{{ esxi_username if harden_scope == 'single' else vcenter_username }}"
+    password: "{{ esxi_password if harden_scope == 'single' else vcenter_password }}"
+    validate_certs: "{{ esxi_validate_certs if harden_scope == 'single' else vcenter_validate_certs }}"
+    esxi_hostname: "{{ item if harden_scope == 'cluster' else omit }}"
+    state: absent
+  when: ensure_exit_maintenance | bool
+  loop: "{{ _targets }}"
+  delegate_to: localhost
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      hardened_hosts: "{{ _targets }}"
+      lockdown: "{{ lockdown_enable }} ({{ lockdown_mode }})"
+      shells: { ssh: "{{ ssh_policy }}", esxi_shell: "{{ esxi_shell_policy }}" }
+      ntp_servers: "{{ ntp_servers }}"
+      syslog_remote: "{{ syslog_remote }}"
+      acceptance_level: "{{ acceptance_level }}"

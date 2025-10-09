@@ -1,0 +1,56 @@
+# Scope: harden a single ESXi host or all hosts in a cluster
+harden_scope: "single"     # single | cluster
+
+# When scope=single
+esxi_hostname: ""          # FQDN/IP of target host
+
+# When scope=cluster (applies to all hosts in a cluster)
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+vcenter_datacenter: ""
+vcenter_cluster: ""
+
+# Common ESXi access (used when connecting via vCenter for host-level ops)
+esxi_username: "root"
+esxi_password: ""
+esxi_validate_certs: false
+
+# ---------- STIG-ish controls (tune for your baseline) ----------
+# 1) Lockdown mode
+lockdown_enable: true
+lockdown_mode: "normal"             # normal | strict
+lockdown_exception_users: []        # e.g. ["VSPHERE.LOCAL\svc-breakglass"]
+
+# 2) Disable remote shells by default
+ssh_policy: "off"                   # on|off|automatic
+esxi_shell_policy: "off"            # on|off|automatic
+
+# 3) Acceptance level
+acceptance_level: "vmware_accepted" # community|partner|vmware_accepted|vmware_certified
+
+# 4) NTP + policy
+ntp_servers: []                     # ["time1.example.local","time2.example.local"]
+ntp_policy: "on"                    # on|off|automatic
+
+# 5) Syslog
+syslog_remote: ""                   # e.g. "udp://10.0.0.5:514"
+syslog_dir_unique: true             # Syslog.global.logDirUnique
+
+# 6) Advanced configuration (override/add as needed)
+advanced_config:
+  # Shell idle and warning controls (seconds)
+  "UserVars.ESXiShellTimeOut": 600
+  "UserVars.ESXiShellInteractiveTimeOut": 900
+  "UserVars.SuppressShellWarning": 1
+  # Password quality control (example: min length 15, at least 3 char classes)
+  "Security.PasswordQualityControl": "retry=3 min=disabled,15,3"
+  # Disable tech support mode DCUI warning (0=show, 1=hide) — keep visible in many orgs; set 0 to show
+  "UserVars.SuppressDCOEnabledWarning": 0
+
+# 7) Firewall ruleset overrides (optional)
+firewall_rulesets: []               # e.g. [{name: "sshServer", enabled: false, allowed_hosts: "ALL"}]
+
+# Maintenance mode exit at end (we don't enter maintenance automatically)
+ensure_exit_maintenance: false

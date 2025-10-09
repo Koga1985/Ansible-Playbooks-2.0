@@ -1,0 +1,4 @@
+---
+collections:
+  - name: community.vmware
+    version: ">=5.0.0"
