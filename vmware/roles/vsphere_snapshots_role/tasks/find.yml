@@ -1,0 +1,50 @@
+---
+- name: Gather VMs
+  community.vmware.vmware_vm_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+  delegate_to: localhost
+  register: vminfo
+
+- name: Build VM list
+  ansible.builtin.set_fact:
+    _all_vm_names: "{{ vminfo.virtual_machines | map(attribute='guest_name') | select('defined') | list }}"
+    _cand_vm_names: >
+      {{ _all_vm_names | select('match', vsphere_include_name_regex if vsphere_include_name_regex|length>0 else '.*')
+      | reject('match', vsphere_exclude_name_regex if vsphere_exclude_name_regex|length>0 else 'a^') | list }}
+
+- name: Gather snapshot info
+  community.vmware.vmware_guest_snapshot_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    name: "{{ item }}"
+  loop: "{{ _cand_vm_names }}"
+  delegate_to: localhost
+  register: snapshot_info_results
+
+- name: Normalize results
+  ansible.builtin.set_fact:
+    vsphere_snapshot_report: "{{ snapshot_info_results.results | map('extract', {'item':'item','snapshots':'snapshots'}) | map('combine') | selectattr('snapshots','defined') | list }}"
+
+- name: Filter VMs with snapshots
+  ansible.builtin.set_fact:
+    vsphere_snapshot_report: "{{ vsphere_snapshot_report | selectattr('snapshots','truthy') | list }}"
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      total_vms: "{{ _all_vm_names | length }}"
+      vms_with_snapshots: "{{ vsphere_snapshot_report | length }}"
+
+- name: Write report to JSON
+  ansible.builtin.copy:
+    dest: "{{ vsphere_snapshots_json_path }}"
+    content: "{{ vsphere_snapshot_report | to_nice_json }}"
+    mode: '0640'
+  delegate_to: localhost
+  when: vsphere_snapshots_write_json | bool

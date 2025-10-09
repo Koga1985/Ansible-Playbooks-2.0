@@ -1,0 +1,22 @@
+# vCenter connection defaults
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+vcenter_datacenter: ""
+
+# Actions: find | delete | both
+vsphere_snapshots_action: "find"
+
+# Output / reporting
+vsphere_snapshots_write_json: true
+vsphere_snapshots_json_path: "./vsphere_snapshots.json"
+
+# Deletion safety + performance
+vsphere_snapshots_confirm_delete: false
+vsphere_snapshots_delete_concurrency: 2
+vsphere_snapshots_precheck_only: false
+
+# Filtering
+vsphere_include_name_regex: ""
+vsphere_exclude_name_regex: ""

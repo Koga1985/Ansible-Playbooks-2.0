@@ -1,0 +1,74 @@
+---
+- name: Ensure datacenter is set
+  ansible.builtin.assert:
+    that: [ vcenter_datacenter | length > 0 ]
+    fail_msg: "vcenter_datacenter must be set."
+
+- name: Safety check
+  ansible.builtin.assert:
+    that:
+      - vsphere_snapshots_confirm_delete | bool or vsphere_snapshots_precheck_only | bool
+    fail_msg: "Set vsphere_snapshots_confirm_delete=true or vsphere_snapshots_precheck_only=true."
+
+- name: Gather VMs
+  community.vmware.vmware_vm_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+  delegate_to: localhost
+  register: vminfo
+
+- name: Build VM data
+  ansible.builtin.set_fact:
+    _vm_records: "{{ vminfo.virtual_machines | selectattr('guest_name','defined') | list }}"
+    _vm_moids: "{{ _vm_records | map(attribute='moid') | list }}"
+    _vm_names: "{{ _vm_records | map(attribute='guest_name') | list }}"
+
+- name: Probe snapshots
+  community.vmware.vmware_guest_snapshot_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    name: "{{ item }}"
+  loop: "{{ _vm_names }}"
+  delegate_to: localhost
+  register: _snap_probe
+
+- name: Filter VMs with snapshots
+  ansible.builtin.set_fact:
+    _vms_with_snaps: "{{ _snap_probe.results | selectattr('snapshots','defined') | selectattr('snapshots','truthy') | map(attribute='item') | list }}"
+    _moids_with_snaps: "{{ _vm_records | selectattr('guest_name','in', _vms_with_snaps) | map(attribute='moid') | list }}"
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      vms_with_snapshots: "{{ _vms_with_snaps | length }}"
+      precheck_only: "{{ vsphere_snapshots_precheck_only | bool }}"
+
+- name: End if precheck
+  ansible.builtin.meta: end_task
+  when: vsphere_snapshots_precheck_only | bool
+
+- name: Remove all snapshots
+  community.vmware.vmware_guest_snapshot:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    moid: "{{ item }}"
+    state: remove_all
+  loop: "{{ _moids_with_snaps }}"
+  delegate_to: localhost
+  throttle: "{{ vsphere_snapshots_delete_concurrency | int }}"
+  register: _delete_results
+
+- name: Report
+  ansible.builtin.debug:
+    msg:
+      attempted: "{{ _moids_with_snaps | length }}"
+      changed: "{{ _delete_results.results | selectattr('changed','defined') | selectattr('changed') | list | length }}"
+      failed: "{{ _delete_results.results | selectattr('failed','defined') | selectattr('failed') | list | length }}"

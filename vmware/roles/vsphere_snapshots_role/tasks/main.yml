@@ -1,0 +1,16 @@
+---
+- name: Validate connection vars
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+    fail_msg: "vCenter connection vars required."
+
+- name: Run find snapshots
+  ansible.builtin.import_tasks: find.yml
+  when: vsphere_snapshots_action in ["find", "both"]
+
+- name: Run delete snapshots
+  ansible.builtin.import_tasks: delete.yml
+  when: vsphere_snapshots_action in ["delete", "both"]
