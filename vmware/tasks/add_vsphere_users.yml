@@ -1,0 +1,100 @@
+# Purpose:
+#  (A) Create local users on ESXi hosts
+#  (B) Assign permissions (roles) to principals on vCenter/ESXi objects
+#
+# Requirements:
+#  - collections: community.vmware
+#
+# Expected vars:
+#  # ESXi section (A)
+#  esxi_hostname: "esxi01.example.local"
+#  esxi_username: "root"
+#  esxi_password: "{{ vault_esxi_root_password }}"
+#  esxi_validate_certs: false
+#  esxi_local_users:
+#    - name: "opsadmin"
+#      password: "{{ vault_opsadmin_pwd }}"
+#      description: "Ops admin"
+#      state: present        # present|absent
+#    - name: "readonly1"
+#      password: "{{ vault_ro_pwd }}"
+#      description: "Read-only user"
+#      state: present
+#
+#  # Permissions section (B)
+#  vcenter_hostname: "vcenter.example.local"
+#  vcenter_username: "{{ lookup('env','VCENTER_USERNAME') }}"
+#  vcenter_password: "{{ lookup('env','VCENTER_PASSWORD') }}"
+#  vcenter_validate_certs: false
+#  # Optional: create/update a custom local role at vCenter
+#  vc_local_roles: []       # e.g. [{ name: "Ops-ReadOnly", privileges: ["System.View","System.Anonymous"] }]
+#  # Assign principals to objects with roles
+#  vc_permissions: []
+#  # Example:
+#  # vc_permissions:
+#  #   - { object_type: "Folder", object_name: "Production", principal: "EXAMPLE\\vSphere-Admins", role_name: "Administrator", propagate: true, state: present }
+#  #   - { object_type: "Datacenter", object_name: "DC1", principal: "readonly1", role_name: "Read-only", propagate: true, state: present }
+
+# ----------------------------
+# (A) ESXi: create local users
+# ----------------------------
+- name: "ESXi | Ensure local users exist/absent"
+  community.vmware.vmware_local_user_manager:
+    hostname: "{{ esxi_hostname }}"
+    username: "{{ esxi_username }}"
+    password: "{{ esxi_password }}"
+    validate_certs: "{{ esxi_validate_certs | default(false) }}"
+    local_user_name: "{{ item.name }}"
+    local_user_password: "{{ item.password | default(omit) }}"
+    local_user_description: "{{ item.description | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+  loop: "{{ esxi_local_users | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  delegate_to: localhost
+  when: esxi_local_users is defined and esxi_local_users | length > 0
+  tags: [esxi_users]
+  # Creates/removes ESXi local users via API. :contentReference[oaicite:3]{index=3}
+
+# -----------------------------------------------------
+# (B1) vCenter/ESXi: optional custom local role creation
+# -----------------------------------------------------
+- name: "VC/ESXi | Ensure custom local roles exist (optional)"
+  community.vmware.vmware_local_role_manager:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    local_role_name: "{{ item.name }}"
+    privileges: "{{ item.privileges | default(omit) }}"
+    state: present
+  loop: "{{ vc_local_roles | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  delegate_to: localhost
+  when: vc_local_roles is defined and vc_local_roles | length > 0
+  tags: [roles]
+  # Manages local roles & privileges on vCenter/ESXi. :contentReference[oaicite:4]{index=4}
+
+# --------------------------------------------------------
+# (B2) vCenter/ESXi: assign object permissions to principals
+# --------------------------------------------------------
+- name: "VC/ESXi | Assign object permissions to principals"
+  community.vmware.vmware_object_role_permission:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    object_type: "{{ item.object_type }}"
+    object_name: "{{ item.object_name }}"
+    principal: "{{ item.principal }}"
+    role: "{{ item.role_name }}"
+    propagate: "{{ item.propagate | default(true) }}"
+    state: "{{ item.state | default('present') }}"
+  loop: "{{ vc_permissions | default([]) }}"
+  loop_control:
+    label: "{{ item.object_type }} {{ item.object_name }} -> {{ item.principal }} : {{ item.role_name }}"
+  delegate_to: localhost
+  when: vc_permissions is defined and vc_permissions | length > 0
+  tags: [permissions]
+  # Assigns/removes permissions (present|absent) on folders, DCs, etc. :contentReference[oaicite:5]{index=5}
