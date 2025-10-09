@@ -1,0 +1,58 @@
+# tasks/delete_all_vsphere_snapshots.yml
+# Deletes ALL snapshots on ALL VMs in the specified vCenter/datacenter.
+# Safety: Won't run unless confirm_delete_all_snapshots is true.
+
+- name: Safety check — explicit confirmation required
+  ansible.builtin.assert:
+    that:
+      - confirm_delete_all_snapshots | default(false) | bool
+    fail_msg: >
+      Refusing to proceed. Set confirm_delete_all_snapshots=true to delete ALL VM snapshots.
+
+- name: Gather all VMs (to get MoIDs)
+  community.vmware.vmware_vm_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+  delegate_to: localhost
+  register: vminfo
+  tags: [snapshots, discovery]
+  # vmware_vm_info returns a list with each VM's name and moid, among other fields. :contentReference[oaicite:1]{index=1}
+
+- name: Build list of {name, moid}
+  ansible.builtin.set_fact:
+    vm_moids: >-
+      {{ vminfo.virtual_machines
+         | map(attribute='moid')
+         | list }}
+    vm_names: >-
+      {{ vminfo.virtual_machines
+         | map(attribute='guest_name')
+         | list }}
+
+- name: Remove ALL snapshots for each VM (throttled)
+  community.vmware.vmware_guest_snapshot:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    moid: "{{ item }}"
+    state: remove_all
+  loop: "{{ vm_moids }}"
+  loop_control:
+    label: "{{ item }}"
+  delegate_to: localhost
+  throttle: "{{ snapshot_delete_concurrency | default(2) }}"
+  register: snapshot_purge
+  tags: [snapshots, delete]
+  # state: remove_all is the supported way to delete all snapshots on a VM. :contentReference[oaicite:2]{index=2}
+
+- name: Show summary
+  ansible.builtin.debug:
+    msg:
+      total_vms: "{{ vm_moids | length }}"
+      changed_tasks: "{{ snapshot_purge.results | selectattr('changed','defined') | selectattr('changed') | list | length }}"
+      failed_tasks:  "{{ snapshot_purge.results | selectattr('failed','defined')  | selectattr('failed')  | list | length }}"
+  tags: [snapshots, report]
