@@ -1,0 +1,14 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Clone Linux VM from vSphere template, attach to portgroup, and join to Active Directory via realmd/SSSD.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["8", "9"]
+    - name: Ubuntu
+      versions: ["20.04", "22.04", "24.04"]
+    - name: Debian
+      versions: ["11", "12"]
+  galaxy_tags: ["vmware","vsphere","linux","active-directory","realmd","sssd","provision"]
+dependencies: []

@@ -1,0 +1,186 @@
+---
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+      - vm_template | length > 0
+      - vm_name | length > 0
+    fail_msg: "Missing one or more required variables (vCenter creds, vm_template, vm_name)."
+
+- name: Clone Linux VM from template (with network + customization)
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    cluster: "{{ vcenter_cluster | default(omit) }}"
+    folder: "{{ vcenter_folder | default(omit) }}"
+    datastore: "{{ vcenter_datastore | default(omit) }}"
+    name: "{{ vm_name }}"
+    template: "{{ vm_template }}"
+    state: poweredon
+    hardware:
+      num_cpus: "{{ vm_cpu }}"
+      memory_mb: "{{ vm_memory_mb }}"
+    disk:
+      - size_gb: "{{ vm_disk_gb }}"
+    annotation: "{{ vm_annotation }}"
+    networks: "{{ vm_networks }}"
+    wait_for_ip_address: "{{ vm_wait_for_ip | bool }}"
+    customization:
+      hostname: "{{ linux_hostname }}"
+      timezone: "{{ linux_timezone }}"
+  delegate_to: localhost
+  register: vm_result
+
+- name: Extract primary IPv4 address from clone result
+  ansible.builtin.set_fact:
+    new_vm_ipv4: >-
+      {{
+        vm_result.instance.ipv4 if (vm_result.instance is defined and vm_result.instance.ipv4 is defined)
+        else (vm_result.instance.guest_ip_address if (vm_result.instance is defined and vm_result.instance.guest_ip_address is defined) else omit)
+      }}
+
+- name: Show new VM details
+  ansible.builtin.debug:
+    msg:
+      name: "{{ vm_name }}"
+      ipv4: "{{ new_vm_ipv4 | default('unknown') }}"
+      more: "{{ vm_result.instance | default({}) }}"
+
+- name: Stop here if join handled by VMware customization
+  ansible.builtin.meta: end_play
+  when: join_method == 'vmware'
+
+# ---- Ansible-driven AD join using realmd/SSSD ----
+- name: Wait for SSH on the new VM
+  ansible.builtin.wait_for:
+    host: "{{ new_vm_ipv4 | default(vm_name) }}"
+    port: "{{ ssh_port }}"
+    timeout: 1200
+
+- name: Set connection vars for subsequent tasks (delegation to guest)
+  ansible.builtin.set_fact:
+    _ssh_vars:
+      ansible_connection: ssh
+      ansible_user: "{{ ssh_user }}"
+      ansible_password: "{{ (ssh_private_key_file | length == 0) | ternary(ssh_password, omit) }}"
+      ansible_ssh_private_key_file: "{{ (ssh_private_key_file | length > 0) | ternary(ssh_private_key_file, omit) }}"
+      ansible_port: "{{ ssh_port }}"
+      ansible_ssh_common_args: "-o StrictHostKeyChecking={{ ssh_strict_host_key_checking }}"
+      ansible_become: true
+      ansible_become_method: sudo
+
+- name: Ensure realmd/SSSD packages are present (RHEL-like)
+  ansible.builtin.package:
+    name:
+      - realmd
+      - sssd
+      - sssd-tools
+      - adcli
+      - oddjob
+      - oddjob-mkhomedir
+      - samba-common-tools
+      - krb5-workstation
+    state: present
+  vars: "{{ _ssh_vars }}"
+  delegate_to: "{{ new_vm_ipv4 | default(vm_name) }}"
+  when: "'RedHat' in (ansible_facts['os_family'] | default('')) or 'Rocky' in (ansible_facts['distribution'] | default(''))"
+
+- name: Ensure realmd/SSSD packages are present (Debian/Ubuntu)
+  ansible.builtin.package:
+    name:
+      - realmd
+      - sssd
+      - sssd-tools
+      - adcli
+      - libnss-sss
+      - libpam-sss
+      - packagekit
+    state: present
+  vars: "{{ _ssh_vars }}"
+  delegate_to: "{{ new_vm_ipv4 | default(vm_name) }}"
+  when: "'Debian' in (ansible_facts['os_family'] | default('')) or 'Ubuntu' in (ansible_facts['distribution'] | default(''))"
+
+- name: Discover domain via realm
+  ansible.builtin.shell: "realm discover {{ ad_domain }}"
+  args:
+    warn: false
+  register: realm_discover
+  changed_when: false
+  failed_when: realm_discover.rc not in [0]
+  vars: "{{ _ssh_vars }}"
+  delegate_to: "{{ new_vm_ipv4 | default(vm_name) }}"
+
+- name: Check if system already joined
+  ansible.builtin.shell: "realm list | grep -iE '^domain-name:\s*{{ ad_domain | lower }}'"
+  args:
+    warn: false
+  register: realm_list
+  changed_when: false
+  failed_when: false
+  vars: "{{ _ssh_vars }}"
+  delegate_to: "{{ new_vm_ipv4 | default(vm_name) }}"
+
+- name: Join AD domain with realmd (non-interactive)
+  ansible.builtin.shell: >
+    realm join {{ ad_domain }}
+    --user='{{ ad_domain_user }}'
+    {{ ad_domain_ou | length > 0 | ternary('--computer-ou="' ~ ad_domain_ou ~ '"','') }}
+  args:
+    stdin: "{{ ad_domain_password }}"
+    warn: false
+  register: realm_join
+  changed_when: realm_join.rc == 0
+  failed_when: realm_join.rc not in [0]
+  when: realm_list.rc != 0
+  vars: "{{ _ssh_vars }}"
+  delegate_to: "{{ new_vm_ipv4 | default(vm_name) }}"
+
+- name: Configure SSSD to allow AD logins (create home dirs)
+  ansible.builtin.lineinfile:
+    path: /etc/sssd/sssd.conf
+    regexp: '^use_fully_qualified_names\s*=.*'
+    line: 'use_fully_qualified_names = False'
+    create: false
+    backup: true
+  vars: "{{ _ssh_vars }}"
+  delegate_to: "{{ new_vm_ipv4 | default(vm_name) }}"
+
+- name: Ensure oddjobd is enabled for mkhomedir
+  ansible.builtin.service:
+    name: oddjobd
+    state: started
+    enabled: true
+  vars: "{{ _ssh_vars }}"
+  delegate_to: "{{ new_vm_ipv4 | default(vm_name) }}"
+  when: "'RedHat' in (ansible_facts['os_family'] | default(''))"
+
+- name: Allow specific AD groups (optional)
+  ansible.builtin.shell: >
+    {{ 'realm permit -g ' + (ad_allow_groups | join(' -g ')) if (ad_allow_groups | length > 0) else 'true' }}
+  args:
+    warn: false
+  register: realm_permit
+  changed_when: (ad_allow_groups | length) > 0 and realm_permit.rc == 0
+  failed_when: (ad_allow_groups | length) > 0 and realm_permit.rc != 0
+  vars: "{{ _ssh_vars }}"
+  delegate_to: "{{ new_vm_ipv4 | default(vm_name) }}"
+
+- name: Restart SSSD
+  ansible.builtin.service:
+    name: sssd
+    state: restarted
+    enabled: true
+  vars: "{{ _ssh_vars }}"
+  delegate_to: "{{ new_vm_ipv4 | default(vm_name) }}"
+
+- name: Reboot after domain join (if requested)
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ reboot_timeout }}"
+  when: reboot_after_domain_join | bool
+  vars: "{{ _ssh_vars }}"
+  delegate_to: "{{ new_vm_ipv4 | default(vm_name) }}"

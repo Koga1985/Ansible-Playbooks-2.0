@@ -1,0 +1,54 @@
+# vCenter connection
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+vcenter_datacenter: "ha-datacenter"
+vcenter_cluster: ""
+vcenter_folder: ""                 # e.g. /DC1/vm/Linux
+vcenter_datastore: ""
+
+# Template & VM settings
+vm_name: "lin-demo-01"
+vm_template: ""                    # required
+vm_power_on: true
+vm_wait_for_ip: true
+vm_annotation: "Provisioned by Ansible"
+vm_cpu: 2
+vm_memory_mb: 4096
+vm_disk_gb: 40
+vm_networks:
+  - name: "VM Network"             # Portgroup (vSS or VDS)
+    type: dhcp                     # dhcp|static
+    # ip: "192.0.2.20"             # required if type=static
+    # netmask: "255.255.255.0"
+    # gateway: "192.0.2.1"
+    # dns_servers: ["192.0.2.100","192.0.2.101"]
+    device_type: "vmxnet3"
+
+# Guest customization (Linux)
+linux_hostname: "{{ vm_name }}"
+linux_timezone: "UTC"
+
+# Domain join (Active Directory) method
+#   vmware  - attempt AD join via vCenter Linux customization (limited, rarely used)
+#   realmd  - use realmd/sssd on the guest via Ansible/SSH
+join_method: "realmd"
+
+# AD/Realm parameters
+ad_domain: "example.local"
+ad_domain_user: ""                 # e.g. "EXAMPLE\\joinuser"
+ad_domain_password: ""
+ad_domain_ou: ""                   # optional OU path (not always used by realmd)
+ad_allow_groups: ["Domain Admins"] # groups allowed to login (optional)
+
+# SSH connectivity to the new guest (for realmd path)
+ssh_user: "cloud-user"
+ssh_password: ""
+ssh_private_key_file: ""           # prefer key auth when possible
+ssh_port: 22
+ssh_strict_host_key_checking: "no"
+
+# Post-join reboot
+reboot_after_domain_join: true
+reboot_timeout: 1200
