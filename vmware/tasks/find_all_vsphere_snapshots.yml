@@ -1,0 +1,87 @@
+# tasks/find_all_vsphere_snapshots.yml
+# Purpose: Enumerate all VMs in vCenter and collect their snapshot info into a single report.
+# Notes:
+#   - Runs entirely from the control node (delegated to localhost).
+#   - Store creds in Ansible Vault or environment variables (recommended).
+#   - Produces an in-memory "snapshot_report" fact and prints a summary.
+#   - Optionally writes a JSON report file to the controller.
+
+- name: Gather all VMs from vCenter
+  community.vmware.vmware_vm_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    # datacenter: "{{ vcenter_datacenter | default(omit) }}"   # uncomment if you want to scope to a DC
+  delegate_to: localhost
+  register: vminfo
+  tags: [snapshots, discovery]
+
+- name: Build list of VM names to query for snapshots
+  ansible.builtin.set_fact:
+    vm_names: "{{ vminfo.virtual_machines | map(attribute='guest_name') | select('defined') | list }}"
+  tags: [snapshots, discovery]
+
+- name: Get snapshot info for each VM
+  community.vmware.vmware_guest_snapshot_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    name: "{{ item }}"
+  loop: "{{ vm_names }}"
+  loop_control:
+    label: "{{ item }}"
+  delegate_to: localhost
+  register: snapshot_info_results
+  tags: [snapshots, discovery]
+
+# snapshot_info_results.results[*] typically contains:
+#   - item: VM name
+#   - snapshots: [] or list of snapshot trees with name, description, create_time, state, etc.
+
+- name: Normalize snapshot data into a flat list
+  ansible.builtin.set_fact:
+    snapshot_report: >-
+      {{
+        snapshot_info_results.results
+        | json_query('[].{vm:item, snapshots: snapshots}')
+        | map('combine', {
+            'snapshots': (
+              (.[].snapshots | default([]))
+            )
+          }) | list
+      }}
+  vars:
+    # helper to flatten nested snapshot trees, if present
+    # you can keep it simple if your environment doesn’t use nested trees
+    # For complex trees, consider a custom filter; here we keep native structures.
+  tags: [snapshots]
+
+- name: Filter to VMs that actually have snapshots
+  ansible.builtin.set_fact:
+    snapshot_report: "{{ snapshot_report | selectattr('snapshots', 'defined') | selectattr('snapshots', 'truthy') | list }}"
+  tags: [snapshots]
+
+- name: Show summary of VMs with snapshots
+  ansible.builtin.debug:
+    msg:
+      total_vms_checked: "{{ vm_names | length }}"
+      vms_with_snapshots: "{{ snapshot_report | length }}"
+  tags: [snapshots]
+
+- name: Pretty print snapshot details
+  ansible.builtin.debug:
+    var: snapshot_report
+    verbosity: 1
+  tags: [snapshots]
+
+# Optional: write a JSON file to the controller
+- name: Write snapshot report to JSON (controller)
+  ansible.builtin.copy:
+    dest: "{{ snapshot_report_path | default('./vsphere_snapshots.json') }}"
+    content: "{{ snapshot_report | to_nice_json }}"
+    mode: '0640'
+  delegate_to: localhost
+  when: snapshot_report | length > 0
+  tags: [snapshots, report]
