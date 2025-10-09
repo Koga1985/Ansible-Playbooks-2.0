@@ -1,0 +1,201 @@
+# Apply and enforce RBAC policy in vSphere
+#
+# Vars you provide (examples below):
+# vcenter_hostname, vcenter_username, vcenter_password, vcenter_validate_certs
+#
+# Optional: create/update local roles
+# policy_roles:
+#   - name: "Ops-ReadOnly"
+#     privileges:
+#       - "System.View"
+#       - "System.Anonymous"
+#
+# Bindings you want enforced
+# policy_bindings:
+#   - object: { type: "Folder", name: "Production", propagate: true }
+#     grants:
+#       - { principal: "EXAMPLE\\vSphere-Admins", role: "Administrator" }
+#       - { principal: "EXAMPLE\\Ops-RO",        role: "Read-only" }
+#     exclusive: true
+#     ignore_principals:
+#       - "VSPHERE.LOCAL\\Administrator"
+#       - "VSPHERE.LOCAL\\Administrators"
+#
+#   - object: { type: "Datacenter", name: "DC1", propagate: true }
+#     grants:
+#       - { principal: "EXAMPLE\\vSphere-Admins", role: "Administrator" }
+#     exclusive: false
+#
+# Safety / behavior:
+# rbac_dry_run: true          # show planned changes only
+# rbac_allow_removal: false   # when true (and exclusive:true), remove non-policy bindings
+
+- name: Set defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    policy_roles: "{{ policy_roles | default([]) }}"
+    policy_bindings: "{{ policy_bindings | default([]) }}"
+    rbac_dry_run: "{{ rbac_dry_run | default(true) }}"
+    rbac_allow_removal: "{{ rbac_allow_removal | default(false) }}"
+
+# -------------------------
+# Ensure local roles exist
+# -------------------------
+- name: Create/update custom local roles (optional)
+  community.vmware.vmware_local_role_manager:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    local_role_name: "{{ item.name }}"
+    privileges: "{{ item.privileges | default(omit) }}"
+    state: present
+  loop: "{{ policy_roles }}"
+  loop_control: { label: "{{ item.name }}" }
+  delegate_to: localhost
+
+# ---------------------------------------------
+# For each object, reconcile desired vs current
+# ---------------------------------------------
+- name: Init change sets
+  ansible.builtin.set_fact:
+    _rbac_to_add: []
+    _rbac_to_remove: []
+
+- name: Fetch current permissions per object
+  community.vmware.vmware_object_role_permission_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    object_type: "{{ item.object.type }}"
+    object_name: "{{ item.object.name }}"
+  loop: "{{ policy_bindings }}"
+  loop_control: { label: "{{ item.object.type }} {{ item.object.name }}" }
+  delegate_to: localhost
+  register: _rbac_info
+
+# Build planned adds/removals
+- name: Compute RBAC deltas
+  ansible.builtin.set_fact:
+    _rbac_to_add: >-
+      {{
+        _rbac_to_add + (
+          [
+            {% for i in range(_rbac_info.results | length) %}
+              {% set b = policy_bindings[i] %}
+              {% set propagate = (b.object.propagate | default(true)) | bool %}
+              {% set desired = (b.grants | default([])) %}
+              {% set current = (_rbac_info.results[i].permission_info | default([])) %}
+              {% set desired_keys = desired
+                   | map('combine', {'propagate': propagate})
+                   | map('combine', {'object_type': b.object.type, 'object_name': b.object.name})
+                   | map('combine', {'_key': None})
+                   | list %}
+              {% for d in desired_keys %}
+                {% set _ = d.update({'_key': d.principal ~ '|' ~ d.role ~ '|' ~ (d.propagate | string) }) %}
+              {% endfor %}
+              {% set current_keys = current
+                   | map('combine', {'object_type': b.object.type, 'object_name': b.object.name})
+                   | map('combine', {'_key': None})
+                   | list %}
+              {% for c in current_keys %}
+                {% set _ = c.update({'_key': c.principal ~ '|' ~ c.role_name ~ '|' ~ (c.propagate | string) }) %}
+              {% endfor %}
+              {% for d in desired_keys %}
+                {% if not (current_keys | selectattr('_key','equalto', d._key) | list) %}
+                  {{ d | to_json }},
+                {% endif %}
+              {% endfor %}
+            {% endfor %}
+          ]
+        )
+      }}
+    _rbac_to_remove: >-
+      {{
+        _rbac_to_remove + (
+          [
+            {% for i in range(_rbac_info.results | length) %}
+              {% set b = policy_bindings[i] %}
+              {% set exclusive = b.exclusive | default(false) | bool %}
+              {% set ignore = (b.ignore_principals | default([])) %}
+              {% set propagate = (b.object.propagate | default(true)) | bool %}
+              {% set desired = (b.grants | default([])) %}
+              {% set current = (_rbac_info.results[i].permission_info | default([])) %}
+              {% if exclusive %}
+                {% set desired_principals = desired | map(attribute='principal') | list %}
+                {% for c in current %}
+                  {% set is_system = (c.principal in ignore) %}
+                  {% set match_role = (desired | selectattr('principal','equalto', c.principal) | selectattr('role','equalto', c.role_name) | list | length) > 0 %}
+                  {% if (not is_system) and (not match_role) %}
+                    {{ {
+                      "object_type": b.object.type,
+                      "object_name": b.object.name,
+                      "principal": c.principal,
+                      "role": c.role_name,
+                      "propagate": c.propagate | default(true)
+                    } | to_json }},
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+          ]
+        )
+      }}
+
+# Preview
+- name: RBAC plan (dry-run preview)
+  ansible.builtin.debug:
+    msg:
+      to_add: "{{ _rbac_to_add }}"
+      to_remove: "{{ _rbac_to_remove }}"
+      removals_enabled: "{{ rbac_allow_removal }}"
+  when: rbac_dry_run | bool
+
+# Apply adds
+- name: Apply required role bindings (present)
+  community.vmware.vmware_object_role_permission:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    object_type: "{{ item.object_type }}"
+    object_name: "{{ item.object_name }}"
+    principal: "{{ item.principal }}"
+    role: "{{ item.role }}"
+    propagate: "{{ item.propagate | default(true) }}"
+    state: present
+  loop: "{{ _rbac_to_add }}"
+  loop_control:
+    label: "{{ item.object_type }} {{ item.object_name }} -> {{ item.principal }} : {{ item.role }}"
+  when: not rbac_dry_run | bool
+  delegate_to: localhost
+
+# Apply removals (guarded)
+- name: Remove non-policy bindings (exclusive scopes)
+  community.vmware.vmware_object_role_permission:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    object_type: "{{ item.object_type }}"
+    object_name: "{{ item.object_name }}"
+    principal: "{{ item.principal }}"
+    role: "{{ item.role }}"
+    propagate: "{{ item.propagate | default(true) }}"
+    state: absent
+  loop: "{{ _rbac_to_remove }}"
+  loop_control:
+    label: "REMOVE {{ item.object_type }} {{ item.object_name }} -> {{ item.principal }} : {{ item.role }}"
+  when:
+    - not rbac_dry_run | bool
+    - rbac_allow_removal | bool
+  delegate_to: localhost
+
+- name: Enforcement summary
+  ansible.builtin.debug:
+    msg:
+      added: "{{ _rbac_to_add | length }}"
+      removed: "{{ _rbac_to_remove | length }}"
+      dry_run: "{{ rbac_dry_run }}"
+      removals_enabled: "{{ rbac_allow_removal }}"
