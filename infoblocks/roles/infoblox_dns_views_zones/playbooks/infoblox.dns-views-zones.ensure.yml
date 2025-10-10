@@ -1,0 +1,35 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: infoblox_dns_views_zones
+      vars:
+        nios_host: "nios.example.local"
+        nios_username: "{{ lookup('env','NIOS_USER') }}"
+        nios_password: "{{ lookup('env','NIOS_PASS') }}"
+        nios_validate_certs: false
+        nios_wapi_version: "v2.12"
+
+        dns_views:
+          - { name: "default", state: present }
+          - { name: "Corp-View", state: present, comment: "corp split-horizon" }
+
+        zones_auth:
+          - { fqdn: "corp.example.com", view: "Corp-View", ns_group: "Grid Primary", state: present }
+          - { fqdn: "10.20.0.0/16", view: "Corp-View", zone_format: "IPV4", state: present }
+
+        zones_forward:
+          - fqdn: "partner.example.net"
+            view: "Corp-View"
+            forwarders_only: true
+            forward_to:
+              - { name: "ns1.partner", address: "203.0.113.10" }
+              - { name: "ns2.partner", address: "203.0.113.11" }
+
+        zones_stub:
+          - fqdn: "branch.corp.example.com"
+            view: "Corp-View"
+            stub_from:
+              - { name: "dc1.branch", address: "10.50.0.10" }
+              - { name: "dc2.branch", address: "10.50.0.11" }

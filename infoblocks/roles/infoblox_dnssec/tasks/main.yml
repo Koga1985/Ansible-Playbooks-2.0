@@ -1,0 +1,116 @@
+---
+- name: Validate credentials
+  ansible.builtin.assert:
+    that:
+      - nios_host | length > 0
+      - nios_username | length > 0
+      - nios_password | length > 0
+    fail_msg: "Please set nios_host/nios_username/nios_password."
+
+- name: Set WAPI base
+  ansible.builtin.set_fact:
+    _wapi_base: "https://{{ nios_host }}/wapi/{{ nios_wapi_version }}"
+    _creds:
+      user: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      force_basic_auth: true
+      validate_certs: "{{ nios_validate_certs }}"
+
+# Optionally create zones if missing
+- name: Ensure zones exist (when allow_create=true)
+  when: item.allow_create | default(false)
+  infoblox.nios_modules.nios_zone:
+    name: "{{ item.fqdn }}"
+    view: "{{ item.view | default('default') }}"
+    ns_group: "{{ item.ns_group | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+    provider:
+      host: "{{ nios_host }}"
+      username: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      validate_certs: "{{ nios_validate_certs }}"
+  loop: "{{ zones_dnssec | default([]) }}"
+
+- name: Make DS output directory
+  ansible.builtin.file:
+    path: "{{ ds_out_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Apply DNSSEC settings via WAPI and collect DS data
+  vars:
+    z: "{{ item }}"
+  block:
+    - name: Lookup zone_auth by fqdn/view
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/zone_auth"
+        method: GET
+        return_content: true
+        status_code: [200]
+        params:
+          _return_as_object: 1
+          fqdn: "{{ z.fqdn }}"
+          view: "{{ z.view | default('default') }}"
+        headers: {}
+        **_creds
+      register: zone_get
+
+    - name: Fail if zone missing (and not created)
+      when: (zone_get.json.result | length) == 0
+      ansible.builtin.fail:
+        msg: "Zone {{ z.fqdn }} (view {{ z.view | default('default') }}) not found. Set allow_create: true to create."
+
+    - name: Build DNSSEC payload
+      ansible.builtin.set_fact:
+        _dnssec_payload: >-
+          {%- set p = {} -%}
+          {%- if z.enable is defined -%}{%- set _ = p.update({'dnssec_enable': z.enable|bool }) -%}{%- endif -%}
+          {%- if z.nsec3 is defined -%}{%- set _ = p.update({'dnssec_nsec3_enable': z.nsec3|bool }) -%}{%- endif -%}
+          {%- if z.nsec3_optout is defined -%}{%- set _ = p.update({'dnssec_nsec3_optout': z.nsec3_optout|bool }) -%}{%- endif -%}
+          {%- if z.ksk_algorithm is defined -%}{%- set _ = p.update({'dnssec_ksk_algorithm': z.ksk_algorithm }) -%}{%- endif -%}
+          {%- if z.ksk_size is defined -%}{%- set _ = p.update({'dnssec_ksk_size': z.ksk_size|int }) -%}{%- endif -%}
+          {%- if z.zsk_algorithm is defined -%}{%- set _ = p.update({'dnssec_zsk_algorithm': z.zsk_algorithm }) -%}{%- endif -%}
+          {%- if z.zsk_size is defined -%}{%- set _ = p.update({'dnssec_zsk_size': z.zsk_size|int }) -%}{%- endif -%}
+          {%- if z.rollover is defined -%}{%- set _ = p.update({'extattrs': {'ROLLOVER_KSK_DAYS': {'value': (z.rollover.ksk_days|default(365)) }, 'ROLLOVER_ZSK_DAYS': {'value': (z.rollover.zsk_days|default(30)) }}}) -%}{%- endif -%}
+          {{ p }}
+
+    - name: Update zone DNSSEC settings
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ zone_get.json.result[0]._ref }}"
+        method: PUT
+        status_code: [200]
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: "{{ _dnssec_payload }}"
+        **_creds
+
+    - name: Re-read zone with DS fields
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ zone_get.json.result[0]._ref }}?_return_fields%2B=fqdn,view,dnssec_enable,dnssec_signed,dnssec_ds_data"
+        method: GET
+        return_content: true
+        status_code: [200]
+        **_creds
+      register: zone_after
+
+    - name: Write DS file per zone (if available)
+      when: zone_after.json.dnssec_ds_data is defined and zone_after.json.dnssec_ds_data | length > 0
+      ansible.builtin.copy:
+        content: |-
+          # DS records for {{ zone_after.json.fqdn }} (view {{ zone_after.json.view }})
+          {% for ds in zone_after.json.dnssec_ds_data %}
+          {{ zone_after.json.fqdn }}. {{ ds.ttl | default('3600') }} IN DS {{ ds.key_tag }} {{ ds.algorithm }} {{ ds.digest_type }} {{ ds.digest }}
+          {% endfor %}
+        dest: "{{ ds_out_dir }}/{{ zone_after.json.fqdn | replace('/','_') }}.ds.txt"
+        mode: "0644"
+
+    - name: Append DS JSON aggregate
+      ansible.builtin.lineinfile:
+        path: "{{ ds_json_path }}"
+        create: true
+        line: "{{ {'fqdn': zone_after.json.fqdn, 'view': zone_after.json.view, 'dnssec_enable': zone_after.json.dnssec_enable, 'dnssec_signed': zone_after.json.dnssec_signed, 'ds': (zone_after.json.dnssec_ds_data | default([])) } | to_json }}"
+        insertafter: EOF
+  loop: "{{ zones_dnssec | default([]) }}"
+  loop_control:
+    label: "{{ item.fqdn }} ({{ item.view | default('default') }})"

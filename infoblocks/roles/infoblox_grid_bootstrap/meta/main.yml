@@ -1,0 +1,7 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Bootstrap Infoblox Grid: create/ensure members (standalone or HA), set Grid NTP/SNMP/SMTP, optionally rotate admin password, generate member join tokens, and output a license & inventory report.
+  license: MIT
+  min_ansible_version: "2.15"
+  galaxy_tags: ["infoblox","nios","grid","bootstrap","ha","license"]
+dependencies: []

@@ -1,0 +1,53 @@
+# Connection (Infoblox NIOS WAPI)
+nios_host: ""
+nios_username: ""
+nios_password: ""
+nios_validate_certs: false
+
+# View to operate in (can be set per-record too)
+dns_view: "default"
+
+# TTL enforcement
+enforce_ttl: true
+ttl_default: 3600
+
+# Optional: load additional records from external YAML files
+# Each file may contain keys: hosts, a_records, aaaa_records, cname_records, mx_records, srv_records, txt_records, ns_records
+record_files: []
+
+# Host records (A/AAAA + PTR management) — preferred for end-hosts
+hosts: []
+# - name: "web01.corp.example.com"
+#   ipv4:
+#     - address: "10.10.10.15"
+#       create_ptr: true
+#   ipv6:
+#     - address: "2001:db8::15"
+#       create_ptr: true
+#   aliases: ["web.corp.example.com"]
+#   view: "Corp-View"
+#   ttl: 300
+#   extattrs: {}
+#   state: present
+
+# Individual records
+a_records: []
+# - { name: "api.corp.example.com", address: "10.10.20.50", view: "Corp-View", ttl: 300, extattrs: {}, state: present }
+
+aaaa_records: []
+# - { name: "api.corp.example.com", address: "2001:db8::50", view: "Corp-View", ttl: 300, extattrs: {}, state: present }
+
+cname_records: []
+# - { name: "db.corp.example.com", canonical: "db01.corp.example.com", view: "Corp-View", ttl: 300, state: present }
+
+mx_records: []
+# - { name: "corp.example.com", mail_exchanger: "mx1.corp.example.com", preference: 10, view: "Corp-View", ttl: 300, state: present }
+
+srv_records: []
+# - { name: "_kerberos._tcp.corp.example.com", priority: 0, weight: 100, port: 88, target: "dc1.corp.example.com", view: "Corp-View", ttl: 300, state: present }
+
+txt_records: []
+# - { name: "selector1._domainkey.corp.example.com", text: "v=DKIM1; k=rsa; p=...", view: "Corp-View", ttl: 3600, state: present }
+
+ns_records: []
+# - { zone: "branch.corp.example.com", name_server: "ns1.branch.corp.example.com", view: "Corp-View", ttl: 3600, state: present }

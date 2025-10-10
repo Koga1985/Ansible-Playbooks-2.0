@@ -1,0 +1,162 @@
+---
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - nios_host | length > 0
+      - nios_username | length > 0
+      - nios_password | length > 0
+    fail_msg: "Please set nios_host/nios_username/nios_password."
+
+- name: Build provider
+  ansible.builtin.set_fact:
+    nios_provider:
+      host: "{{ nios_host }}"
+      username: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      validate_certs: "{{ nios_validate_certs }}"
+
+# -------- Load/merge external data files (optional) --------
+- name: Initialize merged record containers
+  ansible.builtin.set_fact:
+    _hosts: "{{ hosts | default([]) | list }}"
+    _a: "{{ a_records | default([]) | list }}"
+    _aaaa: "{{ aaaa_records | default([]) | list }}"
+    _cname: "{{ cname_records | default([]) | list }}"
+    _mx: "{{ mx_records | default([]) | list }}"
+    _srv: "{{ srv_records | default([]) | list }}"
+    _txt: "{{ txt_records | default([]) | list }}"
+    _ns: "{{ ns_records | default([]) | list }}"
+
+- name: Include each record file and extend lists
+  vars:
+    _file: "{{ item }}"
+  block:
+    - name: Load vars from {{ _file }}
+      ansible.builtin.include_vars:
+        file: "{{ _file }}"
+        name: _fromfile
+    - name: Merge records from {{ _file }}
+      ansible.builtin.set_fact:
+        _hosts: "{{ _hosts + (_fromfile.hosts | default([])) }}"
+        _a: "{{ _a + (_fromfile.a_records | default([])) }}"
+        _aaaa: "{{ _aaaa + (_fromfile.aaaa_records | default([])) }}"
+        _cname: "{{ _cname + (_fromfile.cname_records | default([])) }}"
+        _mx: "{{ _mx + (_fromfile.mx_records | default([])) }}"
+        _srv: "{{ _srv + (_fromfile.srv_records | default([])) }}"
+        _txt: "{{ _txt + (_fromfile.txt_records | default([])) }}"
+        _ns: "{{ _ns + (_fromfile.ns_records | default([])) }}"
+  loop: "{{ record_files | default([]) }}"
+
+# -------- Normalize TTLs --------
+- name: Normalize TTLs across all records
+  ansible.builtin.set_fact:
+    _hosts: "{{ _hosts | map('combine', {'ttl': (ttl_default if (enforce_ttl and (item.ttl is not defined or item.ttl|int <= 0)) else (item.ttl | default(ttl_default)))}) | list }}"
+  loop: "{{ _hosts }}"
+  loop_control: { loop_var: item }
+
+- name: Normalize TTLs for simple records
+  ansible.builtin.set_fact:
+    _a: "{{ _a | map('combine', {'ttl': (ttl_default if (enforce_ttl and (item.ttl is not defined or item.ttl|int <= 0)) else (item.ttl | default(ttl_default)))}) | list }}"
+    _aaaa: "{{ _aaaa | map('combine', {'ttl': (ttl_default if (enforce_ttl and (item.ttl is not defined or item.ttl|int <= 0)) else (item.ttl | default(ttl_default)))}) | list }}"
+    _cname: "{{ _cname | map('combine', {'ttl': (ttl_default if (enforce_ttl and (item.ttl is not defined or item.ttl|int <= 0)) else (item.ttl | default(ttl_default)))}) | list }}"
+    _mx: "{{ _mx | map('combine', {'ttl': (ttl_default if (enforce_ttl and (item.ttl is not defined or item.ttl|int <= 0)) else (item.ttl | default(ttl_default)))}) | list }}"
+    _srv: "{{ _srv | map('combine', {'ttl': (ttl_default if (enforce_ttl and (item.ttl is not defined or item.ttl|int <= 0)) else (item.ttl | default(ttl_default)))}) | list }}"
+    _txt: "{{ _txt | map('combine', {'ttl': (ttl_default if (enforce_ttl and (item.ttl is not defined or item.ttl|int <= 0)) else (item.ttl | default(ttl_default)))}) | list }}"
+    _ns: "{{ _ns | map('combine', {'ttl': (ttl_default if (enforce_ttl and (item.ttl is not defined or item.ttl|int <= 0)) else (item.ttl | default(ttl_default)))}) | list }}"
+
+# -------- Host records --------
+- name: Ensure host records
+  infoblox.nios_modules.nios_host_record:
+    name: "{{ item.name }}"
+    view: "{{ item.view | default(dns_view) }}"
+    ipv4: "{{ item.ipv4 | default(omit) }}"
+    ipv6: "{{ item.ipv6 | default(omit) }}"
+    aliases: "{{ item.aliases | default(omit) }}"
+    ttl: "{{ item.ttl | default(ttl_default) }}"
+    extattrs: "{{ item.extattrs | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+    provider: "{{ nios_provider }}"
+  loop: "{{ _hosts }}"
+
+# -------- A records --------
+- name: Ensure A records
+  infoblox.nios_modules.nios_a_record:
+    name: "{{ item.name }}"
+    view: "{{ item.view | default(dns_view) }}"
+    ipv4addr: "{{ item.address }}"
+    ttl: "{{ item.ttl | default(ttl_default) }}"
+    extattrs: "{{ item.extattrs | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+    provider: "{{ nios_provider }}"
+  loop: "{{ _a }}"
+
+# -------- AAAA records --------
+- name: Ensure AAAA records
+  infoblox.nios_modules.nios_aaaa_record:
+    name: "{{ item.name }}"
+    view: "{{ item.view | default(dns_view) }}"
+    ipv6addr: "{{ item.address }}"
+    ttl: "{{ item.ttl | default(ttl_default) }}"
+    extattrs: "{{ item.extattrs | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+    provider: "{{ nios_provider }}"
+  loop: "{{ _aaaa }}"
+
+# -------- CNAME records --------
+- name: Ensure CNAME records
+  infoblox.nios_modules.nios_cname_record:
+    name: "{{ item.name }}"
+    view: "{{ item.view | default(dns_view) }}"
+    canonical: "{{ item.canonical }}"
+    ttl: "{{ item.ttl | default(ttl_default) }}"
+    state: "{{ item.state | default('present') }}"
+    provider: "{{ nios_provider }}"
+  loop: "{{ _cname }}"
+
+# -------- MX records --------
+- name: Ensure MX records
+  infoblox.nios_modules.nios_mx_record:
+    name: "{{ item.name }}"
+    view: "{{ item.view | default(dns_view) }}"
+    mail_exchanger: "{{ item.mail_exchanger }}"
+    preference: "{{ item.preference | default(10) }}"
+    ttl: "{{ item.ttl | default(ttl_default) }}"
+    state: "{{ item.state | default('present') }}"
+    provider: "{{ nios_provider }}"
+  loop: "{{ _mx }}"
+
+# -------- SRV records --------
+- name: Ensure SRV records
+  infoblox.nios_modules.nios_srv_record:
+    name: "{{ item.name }}"
+    view: "{{ item.view | default(dns_view) }}"
+    priority: "{{ item.priority | default(0) }}"
+    weight: "{{ item.weight | default(0) }}"
+    port: "{{ item.port }}"
+    target: "{{ item.target }}"
+    ttl: "{{ item.ttl | default(ttl_default) }}"
+    state: "{{ item.state | default('present') }}"
+    provider: "{{ nios_provider }}"
+  loop: "{{ _srv }}"
+
+# -------- TXT records --------
+- name: Ensure TXT records
+  infoblox.nios_modules.nios_txt_record:
+    name: "{{ item.name }}"
+    view: "{{ item.view | default(dns_view) }}"
+    text: "{{ item.text }}"
+    ttl: "{{ item.ttl | default(ttl_default) }}"
+    state: "{{ item.state | default('present') }}"
+    provider: "{{ nios_provider }}"
+  loop: "{{ _txt }}"
+
+# -------- NS records --------
+- name: Ensure NS records
+  infoblox.nios_modules.nios_ns_record:
+    zone: "{{ item.zone }}"
+    view: "{{ item.view | default(dns_view) }}"
+    name_server: "{{ item.name_server }}"
+    ttl: "{{ item.ttl | default(ttl_default) }}"
+    state: "{{ item.state | default('present') }}"
+    provider: "{{ nios_provider }}"
+  loop: "{{ _ns }}"

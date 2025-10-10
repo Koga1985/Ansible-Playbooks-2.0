@@ -1,0 +1,28 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: infoblox_dns_records
+      vars:
+        nios_host: "nios.example.local"
+        nios_username: "{{ lookup('env','NIOS_USER') }}"
+        nios_password: "{{ lookup('env','NIOS_PASS') }}"
+        dns_view: "Corp-View"
+        enforce_ttl: true
+        ttl_default: 600
+
+        record_files:
+          - "inventory/dns/prod.yml"
+
+        hosts:
+          - name: "web01.corp.example.com"
+            ipv4: [{ address: "10.10.10.15", create_ptr: true }]
+            aliases: ["web.corp.example.com"]
+            ttl: 300
+
+        a_records:
+          - { name: "api.corp.example.com", address: "10.10.20.50", ttl: 300 }
+
+        cname_records:
+          - { name: "db.corp.example.com", canonical: "db01.corp.example.com", ttl: 300 }

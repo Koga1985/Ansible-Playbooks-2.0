@@ -1,0 +1,7 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Enable and configure DNSSEC for Infoblox zones (NSEC/NSEC3, key algorithms/sizes). Exports DS records for delegation.
+  license: MIT
+  min_ansible_version: "2.15"
+  galaxy_tags: ["infoblox","nios","dnssec","dns","security"]
+dependencies: []

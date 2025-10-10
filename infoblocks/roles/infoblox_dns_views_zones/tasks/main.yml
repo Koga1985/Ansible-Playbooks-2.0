@@ -1,0 +1,153 @@
+---
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - nios_host | length > 0
+      - nios_username | length > 0
+      - nios_password | length > 0
+
+- name: Set provider fact
+  ansible.builtin.set_fact:
+    nios_provider:
+      host: "{{ nios_host }}"
+      username: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      validate_certs: "{{ nios_validate_certs }}"
+
+- name: Ensure DNS views
+  infoblox.nios_modules.nios_dns_view:
+    name: "{{ item.name }}"
+    comment: "{{ item.comment | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+    provider: "{{ nios_provider }}"
+  loop: "{{ dns_views | default([]) }}"
+
+- name: Ensure authoritative zones
+  infoblox.nios_modules.nios_zone:
+    name: "{{ item.fqdn }}"
+    view: "{{ item.view | default('default') }}"
+    ns_group: "{{ item.ns_group | default(omit) }}"
+    grid_primary: "{{ item.grid_primary | default(omit) }}"
+    grid_secondaries: "{{ item.grid_secondaries | default(omit) }}"
+    zone_format: "{{ item.zone_format | default(omit) }}"
+    comment: "{{ item.comment | default(omit) }}"
+    extattrs: "{{ item.extattrs | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+    provider: "{{ nios_provider }}"
+  loop: "{{ zones_auth | default([]) }}"
+  when: zones_auth is defined
+
+- name: Build WAPI base URL
+  ansible.builtin.set_fact:
+    _wapi_base: "https://{{ nios_host }}/wapi/{{ nios_wapi_version }}"
+
+- name: Ensure forward zones (WAPI zone_forward)
+  vars: { z: "{{ item }}" }
+  block:
+    - name: Get forward zone
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/zone_forward"
+        method: GET
+        user: "{{ nios_username }}"
+        password: "{{ nios_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ nios_validate_certs }}"
+        return_content: true
+        status_code: [200]
+        params:
+          _return_as_object: 1
+          fqdn: "{{ z.fqdn }}"
+          view: "{{ z.view | default('default') }}"
+      register: fwd_get
+
+    - name: Upsert forward zone
+      when: z.state | default('present') == 'present'
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/zone_forward"
+        method: "{{ ((fwd_get.json.result | length) > 0) | ternary('PUT', 'POST') }}"
+        user: "{{ nios_username }}"
+        password: "{{ nios_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ nios_validate_certs }}"
+        status_code: [200,201]
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: >-
+          {%- set payload = {
+            "fqdn": z.fqdn,
+            "view": (z.view | default('default')),
+            "forwarders_only": (z.forwarders_only | default(true)),
+            "forward_to": (z.forward_to | default([]))
+          } -%}
+          {%- if (fwd_get.json.result | length) > 0 -%}
+          {{ payload | combine({"_ref": fwd_get.json.result[0]["_ref"]}) }}
+          {%- else -%}
+          {{ payload }}
+          {%- endif -%}
+
+    - name: Delete forward zone
+      when: z.state | default('present') == 'absent' and (fwd_get.json.result | length) > 0
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ fwd_get.json.result[0]._ref }}"
+        method: DELETE
+        user: "{{ nios_username }}"
+        password: "{{ nios_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ nios_validate_certs }}"
+        status_code: [200]
+  loop: "{{ zones_forward | default([]) }}"
+
+- name: Ensure stub zones (WAPI zone_stub)
+  vars: { z: "{{ item }}" }
+  block:
+    - name: Get stub zone
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/zone_stub"
+        method: GET
+        user: "{{ nios_username }}"
+        password: "{{ nios_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ nios_validate_certs }}"
+        return_content: true
+        status_code: [200]
+        params:
+          _return_as_object: 1
+          fqdn: "{{ z.fqdn }}"
+          view: "{{ z.view | default('default') }}"
+      register: stub_get
+
+    - name: Upsert stub zone
+      when: z.state | default('present') == 'present'
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/zone_stub"
+        method: "{{ ((stub_get.json.result | length) > 0) | ternary('PUT', 'POST') }}"
+        user: "{{ nios_username }}"
+        password: "{{ nios_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ nios_validate_certs }}"
+        status_code: [200,201]
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: >-
+          {%- set payload = {
+            "fqdn": z.fqdn,
+            "view": (z.view | default('default')),
+            "stub_from": (z.stub_from | default([]))
+          } -%}
+          {%- if (stub_get.json.result | length) > 0 -%}
+          {{ payload | combine({"_ref": stub_get.json.result[0]["_ref"]}) }}
+          {%- else -%}
+          {{ payload }}
+          {%- endif -%}
+
+    - name: Delete stub zone
+      when: z.state | default('present') == 'absent' and (stub_get.json.result | length) > 0
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ stub_get.json.result[0]._ref }}"
+        method: DELETE
+        user: "{{ nios_username }}"
+        password: "{{ nios_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ nios_validate_certs }}"
+        status_code: [200]
+  loop: "{{ zones_stub | default([]) }}"

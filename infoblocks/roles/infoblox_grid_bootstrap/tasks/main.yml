@@ -1,0 +1,203 @@
+---
+- name: Validate credentials
+  ansible.builtin.assert:
+    that:
+      - nios_host | length > 0
+      - nios_username | length > 0
+      - nios_password | length > 0
+    fail_msg: "Please set nios_host/nios_username/nios_password."
+
+- name: Set WAPI base & creds
+  ansible.builtin.set_fact:
+    _wapi_base: "https://{{ nios_host }}/wapi/{{ nios_wapi_version }}"
+    _creds:
+      user: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      force_basic_auth: true
+      validate_certs: "{{ nios_validate_certs }}"
+
+- name: Ensure token directory exists
+  ansible.builtin.file:
+    path: "{{ token_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---------------- GRID SETTINGS ----------------
+- name: Read Grid object
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/grid"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params: { _return_as_object: 1 }
+    **_creds
+  register: grid_get
+
+- name: Update Grid NTP/SNMP/SMTP settings (best-effort)
+  vars:
+    gref: "{{ grid_get.json.result[0]._ref }}"
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/{{ gref }}"
+    method: PUT
+    status_code: [200]
+    headers: { Content-Type: "application/json" }
+    body_format: json
+    body: >-
+      {%- set p = {} -%}
+      {%- if ntp_servers is defined and (ntp_servers|length) > 0 -%}{%- set _ = p.update({'ntp_servers': ntp_servers}) -%}{%- endif -%}
+      {%- if smtp.relay | default('') -%}{%- set _ = p.update({'email_relay_server': smtp.relay }) -%}{%- endif -%}
+      {%- if smtp.sender | default('') -%}{%- set _ = p.update({'email_from': smtp.sender }) -%}{%- endif -%}
+      {%- if snmp.ro_communities | default([]) -%}{%- set _ = p.update({'snmp_ro_community': (snmp.ro_communities | first) }) -%}{%- endif -%}
+      {%- if snmp.sys_contact | default('') -%}{%- set _ = p.update({'snmp_sys_contact': snmp.sys_contact }) -%}{%- endif -%}
+      {%- if snmp.sys_location | default('') -%}{%- set _ = p.update({'snmp_sys_location': snmp.sys_location }) -%}{%- endif -%}
+      {{ p }}
+    **_creds
+  register: grid_update
+  when: (ntp_servers|length) > 0 or (smtp.relay|default('')|length) > 0 or (smtp.sender|default('')|length) > 0 or (snmp.ro_communities|default([])|length) > 0 or (snmp.sys_contact|default('')|length) > 0 or (snmp.sys_location|default('')|length) > 0
+
+- name: Rotate 'admin' password (optional)
+  when: admin_password_rotate | length > 0
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/grid?_function=update_admin_password"
+    method: POST
+    headers: { Content-Type: "application/json" }
+    body_format: json
+    body: { "admin_password": "{{ admin_password_rotate }}" }
+    status_code: [200]
+    **_creds
+  register: admin_pw_update
+
+# ---------------- MEMBERS / HA ----------------
+- name: Ensure member objects exist (best-effort create/ensure)
+  vars:
+    m: "{{ item }}"
+  block:
+    - name: Lookup member by name
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/member"
+        method: GET
+        return_content: true
+        status_code: [200]
+        params:
+          _return_as_object: 1
+          name: "{{ m.name }}"
+        **_creds
+      register: mem_get
+
+    - name: Create/update standalone member
+      when: not m.ha or not m.ha.enabled | default(false)
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/member{{ ((mem_get.json.result|length) > 0) | ternary('', '') }}"
+        method: "{{ ((mem_get.json.result|length) > 0) | ternary('PUT', 'POST') }}"
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: >-
+          {%- set payload = {
+            "name": m.name,
+            "platform": (m.platform | default(omit)),
+            "comment": (m.comment | default(omit)),
+            "lan1": (m.lan1_ipv4 | default(omit))
+          } -%}
+          {%- if (mem_get.json.result | length) > 0 -%}
+          {{ payload | combine({"_ref": mem_get.json.result[0]["_ref"]}) }}
+          {%- else -%}
+          {{ payload }}
+          {%- endif -%}
+        status_code: [200,201]
+        **_creds
+      register: mem_upd
+
+    - name: Create/update HA member (VIP + nodes) [best-effort]
+      when: m.ha and m.ha.enabled | default(false)
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/member"
+        method: "{{ ((mem_get.json.result|length) > 0) | ternary('PUT', 'POST') }}"
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: >-
+          {%- set ha = m.ha -%}
+          {%- set payload = {
+            "name": m.name,
+            "comment": (m.comment | default(omit)),
+            "vip_setting": { "address": ha.vip },
+            "node_info": [
+              { "lan1": ha.node1_lan1 },
+              { "lan1": ha.node2_lan1 }
+            ]
+          } -%}
+          {%- if (mem_get.json.result | length) > 0 -%}
+          {{ payload | combine({"_ref": mem_get.json.result[0]["_ref"]}) }}
+          {%- else -%}
+          {{ payload }}
+          {%- endif -%}
+        status_code: [200,201]
+        **_creds
+      register: ha_upd
+
+    - name: Try to create join token (if requested; may not be supported on older NIOS)
+      when: m.join_token | default(false)
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/grid?_function=generate_join_token"
+        method: POST
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: { "member_name": "{{ m.name }}" }
+        status_code: [200,400]
+        **_creds
+      register: token_resp
+      failed_when: false
+
+    - name: Save join helper file (if token present)
+      when: token_resp.json.token is defined
+      ansible.builtin.copy:
+        dest: "{{ token_dir }}/{{ m.name }}.join.txt"
+        mode: "0644"
+        content: |-
+          # Member Join Token for {{ m.name }}
+          TOKEN={{ token_resp.json.token }}
+          # On the prospective member's console/CLI:
+          # set membership grid enable
+          # set membership token $TOKEN
+          # set membership grid address {{ nios_host }}
+          # set membership join
+  loop: "{{ members | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# ---------------- LICENSE CHECK / REPORT ----------------
+- name: Grid license summary
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/grid/license"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params: { _return_as_object: 1 }
+    **_creds
+  register: lic_get
+  failed_when: false
+
+- name: Members list for report
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/member"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params: { _return_as_object: 1, _max_results: 1000 }
+    **_creds
+  register: members_list
+
+- name: Write report JSON
+  ansible.builtin.copy:
+    dest: "{{ report_path }}"
+    mode: "0644"
+    content: >-
+      {{
+        {
+          "grid": grid_name,
+          "settings_changed": (grid_update is defined),
+          "admin_pw_rotated": (admin_pw_update is defined),
+          "license": (lic_get.json if (lic_get is defined and lic_get.json is defined) else {}),
+          "members": (members_list.json.result | default([])),
+          "timestamp": ansible_date_time.iso8601
+        } | to_nice_json
+      }}

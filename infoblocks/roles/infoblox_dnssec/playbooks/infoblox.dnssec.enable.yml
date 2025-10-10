@@ -1,0 +1,23 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: infoblox_dnssec
+      vars:
+        nios_host: "nios.example.local"
+        nios_username: "{{ lookup('env','NIOS_USER') }}"
+        nios_password: "{{ lookup('env','NIOS_PASS') }}"
+        nios_validate_certs: false
+        nios_wapi_version: "v2.12"
+        zones_dnssec:
+          - fqdn: "corp.example.com"
+            view: "default"
+            enable: true
+            nsec3: true
+            ksk_algorithm: "RSASHA256"
+            ksk_size: 2048
+            zsk_algorithm: "RSASHA256"
+            zsk_size: 1024
+        ds_out_dir: "/tmp/infoblox-dnssec-ds"
+        ds_json_path: "/tmp/infoblox-dnssec-ds/ds_records.json"

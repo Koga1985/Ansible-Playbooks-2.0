@@ -1,0 +1,7 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Manage Infoblox DNS Views and Zones (authoritative, forward, stub).
+  license: MIT
+  min_ansible_version: "2.15"
+  galaxy_tags: ["infoblox","nios","dns","zones","views"]
+dependencies: []

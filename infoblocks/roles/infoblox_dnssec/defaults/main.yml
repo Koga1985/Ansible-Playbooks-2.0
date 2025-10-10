@@ -1,0 +1,30 @@
+# Connection (Infoblox NIOS WAPI)
+nios_host: ""
+nios_username: ""
+nios_password: ""
+nios_validate_certs: false
+nios_wapi_version: "v2.12"           # adjust to your appliance (e.g., v2.13)
+
+# Zones to manage DNSSEC for
+zones_dnssec: []
+# - fqdn: "corp.example.com"
+#   view: "default"
+#   state: "present"                  # only used if allow_create=true
+#   allow_create: false               # create zone if missing via nios_zone
+#   ns_group: ""                      # optional for creation
+#   # DNSSEC settings
+#   enable: true
+#   nsec3: true                       # true => NSEC3, false => NSEC
+#   nsec3_optout: false
+#   ksk_algorithm: "RSASHA256"        # RSASHA1|RSASHA256|RSASHA512|ECDSAP256SHA256|ECDSAP384SHA384
+#   ksk_size: 2048                    # ignored for ECDSA
+#   zsk_algorithm: "RSASHA256"
+#   zsk_size: 1024                    # ignored for ECDSA
+#   # Rollover policy (metadata; NIOS auto-rolls per grid policy; this is stored for audit)
+#   rollover:
+#     ksk_days: 365
+#     zsk_days: 30
+
+# DS export
+ds_out_dir: "/tmp/infoblox-dnssec-ds"
+ds_json_path: "/tmp/infoblox-dnssec-ds/ds_records.json"

@@ -1,0 +1,15 @@
+# Connection (Infoblox NIOS WAPI)
+nios_host: ""
+nios_username: ""
+nios_password: ""
+nios_validate_certs: false
+nios_wapi_version: "v2.12"
+
+dns_views:
+  - name: "default"
+    state: present
+    comment: ""
+
+zones_auth: []
+zones_forward: []
+zones_stub: []

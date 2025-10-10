@@ -1,0 +1,38 @@
+# Connection (Infoblox NIOS WAPI)
+nios_host: ""
+nios_username: ""
+nios_password: ""
+nios_validate_certs: false
+nios_wapi_version: "v2.12"     # adjust to your NIOS
+
+# Grid master info (used for display & DSN/SMTP/SNMP/NTP settings)
+grid_name: "Infoblox-Grid"
+
+# Member inventory to (pre)create and/or join
+# Supports standalone members or HA pairs.
+members: []
+# - name: "nios-mem1"
+#   platform: "VNIOS"                 # optional hint
+#   lan1_ipv4: "10.10.1.20"
+#   ha:                                # omit for standalone
+#     enabled: true
+#     node1_lan1: "10.10.1.21"
+#     node2_lan1: "10.10.1.22"
+#     vip: "10.10.1.20"
+#   join_token: true                   # try to create a join token (best-effort)
+#   comment: "Core DNS/DHCP in AZ1"
+
+# Grid-wide services/settings
+ntp_servers: []                        # e.g., ["0.pool.ntp.org","1.pool.ntp.org"]
+snmp:
+  ro_communities: []                   # ["public"]
+  sys_contact: ""
+  sys_location: ""
+smtp:
+  relay: ""                            # mail relay host/IP
+  sender: ""                           # from address for alerts
+admin_password_rotate: ""              # set to non-empty to rotate 'admin' password
+
+# Report paths
+report_path: "/tmp/infoblox-grid-bootstrap-report.json"
+token_dir: "/tmp/infoblox-grid-tokens"   # if join_token=true, store helper files here
