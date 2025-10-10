@@ -1,0 +1,34 @@
+# vCenter connection
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+vcenter_datacenter: ""
+cluster_name: ""
+
+# VM/VM rules (affinity/anti-affinity)
+vm_vm_rules: []
+# Example:
+# vm_vm_rules:
+#   - name: "Keep web VMs apart"
+#     state: present           # present | absent
+#     enabled: true
+#     mandatory: false         # false=should / true=must
+#     affinity: false          # false=anti-affinity, true=affinity
+#     vms: ["web01","web02","web03"]
+
+# VM/Host rules via DRS groups
+vm_host_rules: []
+# Example:
+# vm_host_rules:
+#   - name: "DBs on DB hosts"
+#     state: present
+#     enabled: true
+#     mandatory: true
+#     vm_group: "DB-VMs"
+#     host_group: "DB-Hosts"
+#     vms:  ["db01","db02"]
+#     hosts: ["esxi01.lab.local","esxi02.lab.local"]
+
+# Optional: remove cluster rules not declared above (name-based)
+remove_undeclared_rules: false

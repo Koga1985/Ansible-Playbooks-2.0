@@ -1,0 +1,12 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Manage cluster DRS rules — VM/VM affinity & anti-affinity, VM/Host affinity via groups — with optional drift enforcement.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["all"]
+    - name: Ubuntu
+      versions: ["all"]
+  galaxy_tags: ["vmware","vsphere","cluster","drs","affinity","anti-affinity"]
+dependencies: []

@@ -1,0 +1,154 @@
+---
+- name: Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname|length > 0
+      - vcenter_username|length > 0
+      - vcenter_password|length > 0
+      - vcenter_datacenter|length > 0
+      - cluster_name|length > 0
+    fail_msg: "vCenter creds + vcenter_datacenter + cluster_name are required."
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    vm_vm_rules: "{{ vm_vm_rules | default([]) }}"
+    vm_host_rules: "{{ vm_host_rules | default([]) }}"
+    remove_undeclared_rules: "{{ remove_undeclared_rules | default(false) }}"
+
+#######################################################################
+# VM/VM AFFINITY & ANTI-AFFINITY
+#######################################################################
+- name: Enforce VM/VM DRS rules
+  community.vmware.vmware_drs_rule:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    cluster: "{{ cluster_name }}"
+    drs_rule_name: "{{ item.name }}"
+    state: "{{ item.state | default('present') }}"
+    enabled: "{{ item.enabled | default(true) }}"
+    mandatory: "{{ item.mandatory | default(false) }}"
+    affinity_rule: "{{ item.affinity | default(false) }}"
+    vm_list: "{{ item.vms | default([]) }}"
+  loop: "{{ vm_vm_rules }}"
+  loop_control:
+    label: "{{ item.name }} ({{ (item.affinity|default(false)) | ternary('affinity','anti-affinity') }})"
+  delegate_to: localhost
+
+#######################################################################
+# VM/HOST AFFINITY (via DRS Groups + VM/Host Rule)
+#######################################################################
+# 1) Ensure VM and Host DRS groups exist/updated
+- name: Ensure VM DRS groups (for VM/Host rules)
+  community.vmware.vmware_cluster_vm_drs_group:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter_name: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ cluster_name }}"
+    group_name: "{{ item.vm_group }}"
+    vms: "{{ item.vms | default([]) }}"
+    state: "{{ item.state | default('present') }}"
+  loop: "{{ vm_host_rules }}"
+  when: item.vm_group is defined
+  delegate_to: localhost
+
+- name: Ensure Host DRS groups (for VM/Host rules)
+  community.vmware.vmware_cluster_host_drs_group:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter_name: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ cluster_name }}"
+    group_name: "{{ item.host_group }}"
+    hosts: "{{ item.hosts | default([]) }}"
+    state: "{{ item.state | default('present') }}"
+  loop: "{{ vm_host_rules }}"
+  when: item.host_group is defined
+  delegate_to: localhost
+
+# 2) Ensure the VM/Host rule referencing those groups
+- name: Enforce VM/Host DRS rules
+  community.vmware.vmware_vm_host_rule:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    cluster: "{{ cluster_name }}"
+    rule_name: "{{ item.name }}"
+    state: "{{ item.state | default('present') }}"
+    enabled: "{{ item.enabled | default(true) }}"
+    mandatory: "{{ item.mandatory | default(true) }}"
+    vm_group_name: "{{ item.vm_group }}"
+    host_group_name: "{{ item.host_group }}"
+  loop: "{{ vm_host_rules }}"
+  loop_control:
+    label: "{{ item.name }} (VMs: {{ item.vm_group }} ↔ Hosts: {{ item.host_group }})"
+  delegate_to: localhost
+
+#######################################################################
+# OPTIONAL: RULE DRIFT ENFORCEMENT (DELETE UNDECLARED RULES)
+#######################################################################
+- name: Gather existing cluster DRS rules
+  community.vmware.vmware_cluster_drs_rule_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter_name: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ cluster_name }}"
+  register: _drs_info
+  when: remove_undeclared_rules | bool
+  delegate_to: localhost
+
+- name: Compute rule names to remove (not in declared lists)
+  ansible.builtin.set_fact:
+    _declared_names: "{{ (vm_vm_rules | map(attribute='name') | list) + (vm_host_rules | map(attribute='name') | list) }}"
+    _to_remove: >-
+      {{
+        (_drs_info.rules | default([]))
+        | rejectattr('name','in', _declared_names)
+        | map(attribute='name') | list
+      }}
+  when: remove_undeclared_rules | bool
+
+- name: Remove undeclared VM/VM rules (by name)
+  community.vmware.vmware_drs_rule:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    cluster: "{{ cluster_name }}"
+    drs_rule_name: "{{ item }}"
+    state: absent
+  loop: "{{ _to_remove | default([]) }}"
+  when: remove_undeclared_rules | bool
+  delegate_to: localhost
+
+- name: Remove undeclared VM/Host rules (by name)
+  community.vmware.vmware_vm_host_rule:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ vcenter_datacenter }}"
+    cluster: "{{ cluster_name }}"
+    rule_name: "{{ item }}"
+    state: absent
+  loop: "{{ _to_remove | default([]) }}"
+  when: remove_undeclared_rules | bool
+  delegate_to: localhost
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      vm_vm_rules_declared: "{{ vm_vm_rules | map(attribute='name') | list }}"
+      vm_host_rules_declared: "{{ vm_host_rules | map(attribute='name') | list }}"
+      removed_rules: "{{ _to_remove | default([]) }}"
