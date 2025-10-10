@@ -1,0 +1,25 @@
+# vCenter credentials
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+
+# Profile name to manage
+profile_name: ""
+
+# Capture options (from a reference host)
+capture_from_reference: false
+reference_host: ""
+replace_existing_profile: false
+
+# Scope: attach to a cluster OR a list of hosts
+attach_to_cluster: ""
+attach_to_hosts: []
+
+# Compliance & remediation
+remediate: true
+
+# Maintenance mode handling
+ensure_maintenance_mode: true
+evacuate_vms: true
+mm_timeout: 3600

@@ -1,0 +1,12 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Capture, attach, test, and remediate VMware Host Profiles. Optional maintenance mode handling and compliance retest.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["all"]
+    - name: Ubuntu
+      versions: ["all"]
+  galaxy_tags: ["vmware","esxi","host-profiles","compliance","drift"]
+dependencies: []
