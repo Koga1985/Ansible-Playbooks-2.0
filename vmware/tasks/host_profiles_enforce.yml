@@ -1,0 +1,188 @@
+---
+# Enforce VMware Host Profiles (classic) via PowerCLI + optional maintenance mode.
+#
+# Required vCenter vars:
+#   vcenter_hostname, vcenter_username, vcenter_password, vcenter_validate_certs (bool)
+#
+# Required profile vars:
+#   profile_name: "ESXi-Std"
+#
+# Optional capture (create/refresh profile from a reference host):
+#   capture_from_reference: true|false
+#   reference_host: "esxi01.lab.local"
+#   replace_existing_profile: true|false   # if true and profile exists, delete & recapture
+#
+# Attach/apply scope (one of these):
+#   attach_to_cluster: "Compute-Cluster"   # applies/attaches at cluster level
+#   attach_to_hosts: ["esxi01.lab.local","esxi02.lab.local"]  # per-host
+#
+# Compliance + remediation:
+#   remediate: true|false          # actually apply profile after test
+#   ensure_maintenance_mode: true  # enter MM before apply, exit after
+#   evacuate_vms: true             # try vMotion evacuation for MM
+#   mm_timeout: 3600               # seconds
+#
+# Notes:
+# - Applying a Host Profile requires the **target host/cluster in maintenance mode**. :contentReference[oaicite:2]{index=2}
+# - This task runs PowerShell Core (`pwsh`) with **VMware.PowerCLI** installed on the controller (or your jump host).
+
+- name: Assert required vars
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+      - profile_name | length > 0
+      - (attach_to_cluster is defined) or (attach_to_hosts is defined and attach_to_hosts | length > 0)
+    fail_msg: "Set vCenter creds, profile_name, and attach_to_cluster OR attach_to_hosts."
+
+- name: Set defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    capture_from_reference: "{{ capture_from_reference | default(false) }}"
+    replace_existing_profile: "{{ replace_existing_profile | default(false) }}"
+    remediate: "{{ remediate | default(true) }}"
+    ensure_maintenance_mode: "{{ ensure_maintenance_mode | default(true) }}"
+    evacuate_vms: "{{ evacuate_vms | default(true) }}"
+    mm_timeout: "{{ mm_timeout | default(3600) }}"
+
+##############################################################################
+# (Optional) Enter maintenance mode on target hosts before apply
+##############################################################################
+- name: Build list of target hosts
+  ansible.builtin.set_fact:
+    _target_hosts: >-
+      {{
+        (attach_to_hosts | default([])) if (attach_to_hosts is defined)
+        else []
+      }}
+  when: ensure_maintenance_mode | bool
+
+- name: If applying to a cluster, discover member hosts (simple collection call)
+  community.vmware.vmware_cluster_host_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    cluster_name: "{{ attach_to_cluster }}"
+  register: _cluster_hosts
+  when:
+    - ensure_maintenance_mode | bool
+    - attach_to_cluster is defined
+  delegate_to: localhost
+
+- name: Combine host list (cluster + explicit)
+  ansible.builtin.set_fact:
+    _target_hosts: >-
+      {{
+        (_target_hosts | default([]))
+        + ((_cluster_hosts.hosts | map(attribute='name') | list) if _cluster_hosts is defined else [])
+      }}
+  when: ensure_maintenance_mode | bool
+
+- name: Enter maintenance mode on target hosts (if requested)
+  community.vmware.vmware_maintenancemode:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    esxi_hostname: "{{ item }}"
+    state: present
+    evacuate: "{{ evacuate_vms | bool }}"
+    timeout: "{{ mm_timeout | int }}"
+  loop: "{{ _target_hosts | default([]) }}"
+  when: ensure_maintenance_mode | bool
+  delegate_to: localhost
+
+##############################################################################
+# PowerCLI block: capture (optional), attach, test, remediate
+##############################################################################
+- name: Enforce Host Profile via PowerCLI
+  ansible.builtin.command:
+    cmd: >-
+      pwsh -NoLogo -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop';
+      Import-Module VMware.PowerCLI -ErrorAction Stop;
+      Set-PowerCLIConfiguration -InvalidCertificateAction {{ vcenter_validate_certs | ternary('Ignore','Fail') }} -Confirm:\$false | Out-Null;
+      \$si = Connect-VIServer -Server '{{ vcenter_hostname }}' -User '{{ vcenter_username }}' -Password '{{ vcenter_password }}';
+
+      # Lookup or capture profile
+      \$profile = Get-VMHostProfile -Name '{{ profile_name }}' -ErrorAction SilentlyContinue;
+      if ({{ capture_from_reference | ternary('$true','$false') }}) {{
+        if ('{{ reference_host | default('') }}' -eq '') {{ throw 'reference_host is required when capture_from_reference is true.' }}
+        if (\$profile -and {{ replace_existing_profile | ternary('$true','$false') }}) {{
+          Remove-VMHostProfile -VMHostProfile \$profile -Confirm:\$false;
+          \$profile = \$null
+        }}
+        if (-not \$profile) {{
+          \$ref = Get-VMHost -Name '{{ reference_host | default('') }}';
+          \$profile = New-VMHostProfile -Name '{{ profile_name }}' -ReferenceHost \$ref;  # capture
+        }}
+      }}
+
+      # Attach scope
+      if ('{{ attach_to_cluster | default('') }}' -ne '') {{
+        \$scope = Get-Cluster -Name '{{ attach_to_cluster | default('') }}';
+      }} elseif (@('{{ (attach_to_hosts | default([])) | join(\"','\") }}').Length -gt 0) {{
+        \$scope = @('{{ (attach_to_hosts | default([])) | join(\"','\") }}' | ForEach-Object {{ Get-VMHost -Name \$_ }});
+      }} else {{
+        throw 'Provide attach_to_cluster or attach_to_hosts.'
+      }}
+
+      # If profile not found yet (no capture and not existing), throw
+      if (-not \$profile) {{
+        \$profile = Get-VMHostProfile -Name '{{ profile_name }}' -ErrorAction Stop;
+      }}
+
+      # Associate the profile to the entity
+      Set-VMHostProfile -VMHostProfile \$profile -AssociateEntity \$scope | Out-Null;
+
+      # Test compliance
+      \$comp = if (\$scope -is [VMware.VimAutomation.ViCore.Impl.V1.Inventory.ClusterImpl]) {{
+        Test-VMHostProfileCompliance -Profile \$profile
+      }} else {{
+        Test-VMHostProfileCompliance -VMHost \$scope
+      }};
+
+      # Apply/remediate if requested
+      if ({{ remediate | ternary('$true','$false') }}) {{
+        Invoke-VMHostProfile -Entity \$scope -Profile \$profile | Out-Null;
+        Start-Sleep -Seconds 5;
+        \$comp = if (\$scope -is [VMware.VimAutomation.ViCore.Impl.V1.Inventory.ClusterImpl]) {{
+          Test-VMHostProfileCompliance -Profile \$profile
+        }} else {{
+          Test-VMHostProfileCompliance -VMHost \$scope
+        }};
+      }}
+
+      # Emit a compact result
+      \$out = [pscustomobject]@{{
+        profile = '{{ profile_name }}';
+        attached_to = if ('{{ attach_to_cluster | default('') }}' -ne '') {{ '{{ attach_to_cluster }}' }} else {{ '{{ (attach_to_hosts | default([])) | join(',') }}' }};
+        remediate = {{ remediate | ternary('$true','$false') }};
+        compliant = -not (\$comp | Where-Object {{ \$_.Status -ne 'Compliant' }});
+      }};
+      \$out | ConvertTo-Json -Depth 5;
+      "
+  register: hostprof_result
+  changed_when: true
+  delegate_to: localhost
+
+##############################################################################
+# (Optional) Exit maintenance mode after apply
+##############################################################################
+- name: Exit maintenance mode after apply (if requested)
+  community.vmware.vmware_maintenancemode:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    esxi_hostname: "{{ item }}"
+    state: absent
+    timeout: "{{ mm_timeout | int }}"
+  loop: "{{ _target_hosts | default([]) }}"
+  when: ensure_maintenance_mode | bool
+  delegate_to: localhost
+
+- name: Summary
+  ansible.builtin.debug:
+    var: hostprof_result.stdout
