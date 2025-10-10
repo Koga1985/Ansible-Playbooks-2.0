@@ -1,0 +1,144 @@
+---
+# Enforce DRS / HA / EVC baseline for a vSphere cluster.
+#
+# Provide these vars (example runner below):
+#   vcenter_hostname, vcenter_username, vcenter_password, vcenter_validate_certs
+#   vcenter_datacenter, cluster_name
+#
+# DRS:
+#   drs:
+#     enabled: true
+#     mode: fullyAutomated       # fullyAutomated | partiallyAutomated | manual
+#     vmotion_rate: 3            # 1..5 (aggressiveness)
+#
+# HA:
+#   ha:
+#     enabled: true
+#     admission_control:
+#       policy: percentage       # percentage | slots | disabled
+#       cpu_failover_percent: 25 # used when policy=percentage
+#       mem_failover_percent: 25
+#       # For slots policy you can pass additional fields depending on your standard
+#     host_isolation_response: restartHost    # powerOff | shutdown | restartHost | disabled
+#     vm_monitoring: vmAndAppMonitoring       # vmMonitoringOnly | vmAndAppMonitoring | disabled
+#     default_vm_restart_priority: medium     # lowest|low|medium|high|highest (names vary by vSphere; adjust as needed)
+#
+# EVC:
+#   evc:
+#     mode: "intel-broadwell"    # e.g., intel-broadwell | amd-zen2 | disabled
+#
+# Optional:
+#   create_cluster_if_missing: false   # create cluster if it doesn't exist
+
+- name: Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+      - vcenter_datacenter | length > 0
+      - cluster_name | length > 0
+    fail_msg: "vCenter creds + vcenter_datacenter + cluster_name are required."
+
+- name: Set sane defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    create_cluster_if_missing: "{{ create_cluster_if_missing | default(false) }}"
+    drs:
+      enabled: "{{ (drs is defined and drs.enabled is defined) | ternary(drs.enabled, true) }}"
+      mode: "{{ (drs is defined and drs.mode is defined) | ternary(drs.mode, 'fullyAutomated') }}"
+      vmotion_rate: "{{ (drs is defined and drs.vmotion_rate is defined) | ternary(drs.vmotion_rate, 3) }}"
+    ha: "{{ ha | default({
+           'enabled': true,
+           'admission_control': {'policy':'percentage','cpu_failover_percent':25,'mem_failover_percent':25},
+           'host_isolation_response': 'restartHost',
+           'vm_monitoring': 'vmAndAppMonitoring',
+           'default_vm_restart_priority': 'medium'
+         }) }}"
+    evc: "{{ evc | default({'mode':'disabled'}) }}"
+
+##############################################################################
+# Ensure/optionally create the cluster shell (without changing DRS/HA here)
+##############################################################################
+- name: Optionally create cluster if missing
+  community.vmware.vmware_cluster:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter_name: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ cluster_name }}"
+    state: present
+  when: create_cluster_if_missing | bool
+  delegate_to: localhost
+
+##############################################################################
+# DRS baseline
+##############################################################################
+- name: Enforce DRS baseline
+  community.vmware.vmware_cluster_drs:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter_name: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ cluster_name }}"
+    enable: "{{ drs.enabled }}"
+    mode: "{{ drs.mode }}"                # fullyAutomated|partiallyAutomated|manual
+    vmotion_rate: "{{ drs.vmotion_rate }}" # 1..5
+  delegate_to: localhost
+
+##############################################################################
+# HA baseline (admission control, isolation response, VM monitoring, restart)
+##############################################################################
+# Map our simple policy names into module inputs
+- name: Build HA options for module
+  ansible.builtin.set_fact:
+    _ha_enable: "{{ ha.enabled | default(true) }}"
+    _ha_policy: "{{ ha.admission_control.policy | default('percentage') }}"
+    _ha_cpu_pct: "{{ ha.admission_control.cpu_failover_percent | default(25) }}"
+    _ha_mem_pct: "{{ ha.admission_control.mem_failover_percent | default(25) }}"
+    _ha_isolation: "{{ ha.host_isolation_response | default('restartHost') }}"
+    _ha_vm_monitoring: "{{ ha.vm_monitoring | default('vmAndAppMonitoring') }}"
+    _ha_vm_restart_priority: "{{ ha.default_vm_restart_priority | default('medium') }}"
+
+- name: Enforce HA baseline
+  community.vmware.vmware_cluster_ha:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter_name: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ cluster_name }}"
+    enable: "{{ _ha_enable }}"
+    admission_control:
+      policy: "{{ _ha_policy }}"              # percentage|slots|disabled
+      cpu_failover_percent: "{{ _ha_cpu_pct }}"
+      mem_failover_percent: "{{ _ha_mem_pct }}"
+    host_isolation_response: "{{ _ha_isolation }}"    # restartHost|powerOff|shutdown|disabled
+    vm_monitoring: "{{ _ha_vm_monitoring }}"          # vmMonitoringOnly|vmAndAppMonitoring|disabled
+    default_vm_restart_priority: "{{ _ha_vm_restart_priority }}" # low..highest (adjust to your vSphere)
+  delegate_to: localhost
+
+##############################################################################
+# EVC baseline
+##############################################################################
+- name: Enforce EVC mode
+  community.vmware.vmware_evc_mode:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter_name: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ cluster_name }}"
+    evc_mode: "{{ evc.mode }}"            # e.g., intel-broadwell | amd-zen2 | disabled
+    state: "{{ (evc.mode | lower) == 'disabled' | ternary('disabled','present') }}"
+  delegate_to: localhost
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      cluster: "{{ cluster_name }}"
+      drs: "{{ drs }}"
+      ha: "{{ ha }}"
+      evc: "{{ evc }}"
