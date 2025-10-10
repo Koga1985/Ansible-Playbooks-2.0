@@ -1,0 +1,3 @@
+---
+# Uses PowerCLI via pwsh for DRS rules/groups and Resource Pools.
+collections: []

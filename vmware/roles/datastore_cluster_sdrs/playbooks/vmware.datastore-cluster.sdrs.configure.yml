@@ -1,0 +1,24 @@
+---
+- hosts: localhost
+  gather_facts: false
+  roles:
+    - role: datastore_cluster_sdrs
+      vars:
+        vcenter_hostname: "vcsa.example.local"
+        vcenter_username: "{{ lookup('env','VCENTER_USERNAME') }}"
+        vcenter_password: "{{ lookup('env','VCENTER_PASSWORD') }}"
+        vcenter_validate_certs: false
+        vcenter_datacenter: "DC1"
+        sdrs:
+          name: "DSC-Prod"
+          create_if_missing: true
+          enabled: true
+          automation_level: "FullyAutomated"
+          io_balance: { enabled: true, latency_ms_threshold: 15, imbalance_threshold: 5 }
+          space_balance: { enabled: true, min_space_util_diff_pct: 5 }
+          evaluation_interval_minutes: 60
+        membership:
+          ensure_datastores: ["vsanDatastore","iscsi01"]
+          eject_nonlisted: false
+        apply_recommendations: false
+        report_path: "/tmp/DSC-Prod-sdrs-report.json"

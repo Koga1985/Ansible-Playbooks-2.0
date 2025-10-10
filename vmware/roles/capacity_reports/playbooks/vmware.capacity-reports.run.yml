@@ -1,0 +1,22 @@
+---
+- hosts: localhost
+  gather_facts: false
+  roles:
+    - role: capacity_reports
+      vars:
+        vcenter_hostname: "vcenter.example.local"
+        vcenter_username: "{{ lookup('env','VCENTER_USERNAME') }}"
+        vcenter_password: "{{ lookup('env','VCENTER_PASSWORD') }}"
+        vcenter_validate_certs: false
+        vcenter_datacenter: "DC1"
+
+        # optional: limit to clusters, and filter datastores by name
+        clusters: []
+        include_datastores_regex: "^vsan|^nfs-prod"
+
+        out_dir: "/tmp"
+        csv_clusters: "/tmp/capacity_clusters.csv"
+        csv_datastores: "/tmp/capacity_datastores.csv"
+        json_summary: "/tmp/capacity_summary.json"
+        history_csv: "/tmp/capacity_history.csv"
+        trend_days: 90

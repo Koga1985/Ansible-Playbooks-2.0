@@ -1,0 +1,12 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Create/maintain vSAN Storage Policies (FTT, RAID, checksum, etc.) and enforce them by Tag (VM/VMDK). Emits a JSON compliance report.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["all"]
+    - name: Ubuntu
+      versions: ["all"]
+  galaxy_tags: ["vmware","vsan","spbm","storage-policy","compliance","tags"]
+dependencies: []

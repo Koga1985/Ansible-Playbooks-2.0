@@ -1,0 +1,17 @@
+---
+- hosts: localhost
+  gather_facts: false
+  roles:
+    - role: vsan_policies
+      vars:
+        vcenter_hostname: "vcsa.example.local"
+        vcenter_username: "{{ lookup('env','VCENTER_USERNAME') }}"
+        vcenter_password: "{{ lookup('env','VCENTER_PASSWORD') }}"
+        vcenter_validate_certs: false
+        policies:
+          - name: "gold-raid5-1ftt"
+            description: "ERASURE RAID5 FTT1"
+            rules: { ftt: 1, ftm: "RAID5", checksum: true, stripe_width: 1, obj_space_res_pct: 0 }
+        assignments:
+          - { tag: "app:web", policy: "gold-raid5-1ftt", scope: "both" }
+        report_path: "/tmp/vsan-policies-report.json"

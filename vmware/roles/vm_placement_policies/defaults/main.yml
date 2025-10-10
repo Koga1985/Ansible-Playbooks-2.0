@@ -1,0 +1,48 @@
+# vCenter connection
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+
+# Scope
+cluster_name: ""            # default cluster for rules/RPs (can be overridden per item)
+
+# VM-VM (anti-)affinity by tag
+affinity_policies: []
+# - name: "web-aa"
+#   cluster: "Compute-Cluster"         # optional (defaults to cluster_name)
+#   type: "separate"                   # separate | together
+#   vm_tag: "app:web"
+#   enabled: true
+#   mandatory: false                   # true => must; false => should (DRS rule 'Enabled' only; use caution)
+
+# VM↔Host affinity by groups (pin to host groups, or avoid certain hosts)
+host_affinity_policies: []
+# - name: "db-az1-must"
+#   cluster: "Compute-Cluster"
+#   vm_tag: "app:db"
+#   host_group:
+#     name: "AZ1"
+#     hosts: ["esxi01.lab.local","esxi02.lab.local"]
+#   policy: "must_run_on"              # must_run_on | should_run_on | must_not_run_on
+#   enabled: true
+
+# Resource pool policies (reservations/limits/shares) + tag-based placement
+resource_pools: []
+# - name: "RP-Web"
+#   cluster: "Compute-Cluster"
+#   parent: ""                         # optional; RP path under cluster (blank = root)
+#   cpu:
+#     reservation_mhz: 0
+#     limit_mhz: -1                    # -1 means unlimited
+#     shares: "normal"                 # low|normal|high|custom
+#     shares_value: 0                  # used when shares=custom
+#   memory:
+#     reservation_mb: 0
+#     limit_mb: -1
+#     shares: "normal"
+#     shares_value: 0
+#   vm_tag: "app:web"                  # move VMs with this tag into the RP
+
+# Report
+report_path: "/tmp/vm-placement-policies-report.json"

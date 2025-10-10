@@ -1,0 +1,60 @@
+# vCenter connection
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+
+# Customization specs to ensure
+# Supported fields differ for Windows vs Linux (see README).
+specs: []
+# Example:
+# specs:
+#   - name: "win-std"
+#     type: "windows"              # windows | linux
+#     description: "Windows Server base customization"
+#     overwrite: true              # recreate if exists to ensure idempotence
+#     windows:
+#       full_name: "Acme IT"
+#       org_name: "Acme Corp"
+#       time_zone: 035             # Windows time zone code (string or int)
+#       change_sid: true
+#       product_key: ""
+#       admin_password: "{{ vault_win_admin_pwd }}"
+#       auto_logon_count: 0
+#       domain_join:
+#         enabled: true
+#         domain: "corp.example.com"
+#         username: "CORP\\svc_join"
+#         password: "{{ vault_join_pwd }}"
+#         oupath: "OU=Servers,DC=corp,DC=example,DC=com"
+#       workgroup: ""
+#       run_once: []
+#       hostname: "useVMName"      # useVMName | prefix:WEB | fixed:SERVER01
+#     nics:
+#       - index: 0
+#         type: "dhcp"             # dhcp | static
+#         ip: "10.10.10.50"
+#         subnet: "255.255.255.0"
+#         gateway: ["10.10.10.1"]
+#         dns_servers: ["10.10.10.10","10.10.10.11"]
+#         dns_domain: "corp.example.com"
+#
+#   - name: "lin-std"
+#     type: "linux"
+#     description: "Linux base customization"
+#     overwrite: true
+#     linux:
+#       domain: "corp.example.com"
+#       time_zone: "UTC"
+#       hwclock_utc: true
+#       script_text: |
+#         #cloud-init-like post lines
+#         echo 'hello' > /root/hello.txt
+#     nics:
+#       - index: 0
+#         type: "dhcp"
+#         dns_servers: ["10.10.10.10","10.10.10.11"]
+#         dns_domain: "corp.example.com"
+
+# Report path
+report_path: "/tmp/guest-customization-specs-report.json"

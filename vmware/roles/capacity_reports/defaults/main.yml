@@ -1,0 +1,24 @@
+# vCenter connection
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+
+# Scope
+vcenter_datacenter: ""      # Datacenter name to report on
+clusters: []                # Optional: limit to these clusters; empty = all in DC
+include_datastores_regex: ""  # Optional regex to filter datastores (e.g., "^vsan|^nfs-prod")
+
+# Output (BI-friendly)
+out_dir: "/tmp"
+csv_clusters: "{{ out_dir }}/capacity_clusters.csv"
+csv_datastores: "{{ out_dir }}/capacity_datastores.csv"
+json_summary: "{{ out_dir }}/capacity_summary.json"
+
+# Optional history & trend
+history_csv: "{{ out_dir }}/capacity_history.csv"   # set to "" to disable history
+trend_days: 90                                      # compute simple linear trend over N days if history present
+
+# Headroom thresholds (percent free)
+warn_free_pct: 20
+crit_free_pct: 10

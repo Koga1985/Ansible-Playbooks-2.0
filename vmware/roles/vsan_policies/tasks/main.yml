@@ -1,0 +1,122 @@
+---
+- name: Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+
+- name: Set defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    policies: "{{ policies | default([]) }}"
+    assignments: "{{ assignments | default([]) }}"
+    report_path: "{{ report_path | default('/tmp/vsan-policies-report.json') }}"
+    run_compliance_checks: "{{ run_compliance_checks | default(true) }}"
+
+- name: Ensure policies and assign (PowerCLI)
+  ansible.builtin.command:
+    cmd: >-
+      pwsh -NoLogo -NoProfile -NonInteractive -Command
+      "$ErrorActionPreference='Stop';
+       Import-Module VMware.PowerCLI -ErrorAction Stop;
+       Set-PowerCLIConfiguration -InvalidCertificateAction {{ vcenter_validate_certs | ternary('Ignore','Fail') }} -Confirm:$false | Out-Null;
+       $null = Connect-VIServer -Server '{{ vcenter_hostname }}' -User '{{ vcenter_username }}' -Password '{{ vcenter_password }}';
+
+       function Get-VsanCapMap {
+         $caps = Get-SpbmCapability | Where-Object { $_.Id.Namespace -match 'VSAN' -or $_.Name -match 'vSAN' }
+         $map = @{};
+         foreach ($c in $caps) {
+           $n = $c.Name
+           if ($n -match 'Number of failures to tolerate') { $map.ftt = $c }
+           elseif ($n -match 'Failure tolerance method')   { $map.ftm = $c }
+           elseif ($n -match 'Checksum')                    { $map.checksum = $c }
+           elseif ($n -match 'Number of disk stripes')      { $map.stripe = $c }
+           elseif ($n -match 'Object space reservation')    { $map.osr = $c }
+           elseif ($n -match 'IOPS limit')                  { $map.iops = $c }
+           elseif ($n -match 'Force provisioning')          { $map.force = $c }
+         }
+         return $map
+       }
+
+       function Build-RuleSet($ruleSpec) {
+         $map = Get-VsanCapMap
+         $rules = @()
+         if ($ruleSpec.ContainsKey('ftt')) { $rules += New-SpbmRule -Capability $map.ftt -Value ([int]$ruleSpec.ftt) }
+         if ($ruleSpec.ContainsKey('ftm')) {
+           $ftm = ($ruleSpec.ftm).ToUpper()
+           $val = switch ($ftm) { 'RAID1' {'RAID-1 (Mirroring)'} 'RAID5' {'RAID-5 (Erasure Coding)'} 'RAID6' {'RAID-6 (Erasure Coding)'} default {$ruleSpec.ftm} }
+           $rules += New-SpbmRule -Capability $map.ftm -Value $val
+         }
+         if ($ruleSpec.ContainsKey('checksum')) { $rules += New-SpbmRule -Capability $map.checksum -Value ([bool]$ruleSpec.checksum) }
+         if ($ruleSpec.ContainsKey('stripe_width')) { $rules += New-SpbmRule -Capability $map.stripe -Value ([int]$ruleSpec.stripe_width) }
+         if ($ruleSpec.ContainsKey('obj_space_res_pct')) { $rules += New-SpbmRule -Capability $map.osr -Value ([int]$ruleSpec.obj_space_res_pct) }
+         if ($ruleSpec.ContainsKey('iops_limit')) { $rules += New-SpbmRule -Capability $map.iops -Value ([int]$ruleSpec.iops_limit) }
+         if ($ruleSpec.ContainsKey('force_provisioning')) { $rules += New-SpbmRule -Capability $map.force -Value ([bool]$ruleSpec.force_provisioning) }
+         if ($rules.Count -eq 0) { return $null }
+         return (New-SpbmRuleSet -Name 'vSAN' -AllOfRules $rules)
+       }
+
+       $policyResults = @()
+       foreach ($p in @({{ policies | to_json }})) {
+         $pName = $p.name; $pDesc = $p.description; $pRules = $p.rules
+         $existing = Get-SpbmStoragePolicy -Name $pName -ErrorAction SilentlyContinue
+         $rs = Build-RuleSet $pRules
+         if ($existing) {
+           if ($rs) { Set-SpbmStoragePolicy -StoragePolicy $existing -AnyOfRuleSets $rs -Description $pDesc | Out-Null; $policyResults += [pscustomobject]@{ name=$pName; action='updated' } }
+           else { $policyResults += [pscustomobject]@{ name=$pName; action='noop' } }
+         } else {
+           if ($rs) { New-SpbmStoragePolicy -Name $pName -AnyOfRuleSets $rs -Description $pDesc | Out-Null; $policyResults += [pscustomobject]@{ name=$pName; action='created' } }
+           else { throw "No rules for policy $pName" }
+         }
+       }
+
+       $assignResults = @()
+       foreach ($a in @({{ assignments | to_json }})) {
+         $tagName = $a.tag; $polName = $a.policy; $scope = ($a.scope); if (-not $scope) { $scope = 'vm' }
+         $pol = Get-SpbmStoragePolicy -Name $polName -ErrorAction Stop
+         $vms = @(); try { $vms = Get-VM -Tag $tagName } catch { $vms = @() }
+         foreach ($vm in $vms) {
+           if ($scope -in @('vm','both')) {
+             try { Set-SpbmEntityConfiguration -VM $vm -StoragePolicy $pol -ErrorAction Stop | Out-Null; $assignResults += [pscustomobject]@{ vm=$vm.Name; scope='vm'; policy=$polName; status='ok' } }
+             catch { $assignResults += [pscustomobject]@{ vm=$vm.Name; scope='vm'; policy=$polName; status=('err: '+$_.Exception.Message) } }
+           }
+           if ($scope -in @('vmdk','both')) {
+             $disks = Get-HardDisk -VM $vm | Where-Object { $_.Persistence -ne $null }
+             foreach ($d in $disks) {
+               try { Set-SpbmEntityConfiguration -HardDisk $d -StoragePolicy $pol -ErrorAction Stop | Out-Null; $assignResults += [pscustomobject]@{ vm=$vm.Name; vmdk=$d.Name; scope='vmdk'; policy=$polName; status='ok' } }
+               catch { $assignResults += [pscustomobject]@{ vm=$vm.Name; vmdk=$d.Name; scope='vmdk'; policy=$polName; status=('err: '+$_.Exception.Message) } }
+             }
+           }
+         }
+       }
+
+       $compliance = @()
+       if ({{ run_compliance_checks | ternary('$true','$false') }}) {
+         $allTargets = @()
+         foreach ($a in @({{ assignments | to_json }})) {
+           try { $allTargets += (Get-VM -Tag $a.tag) } catch { }
+         }
+         $allTargets = $allTargets | Sort-Object -Unique
+         foreach ($vm in $allTargets) {
+           $vmCfg = Get-SpbmEntityConfiguration -VM $vm -ErrorAction SilentlyContinue
+           $vmStatus = if ($vmCfg) { $vmCfg.ComplianceStatus } else { 'Unknown' }
+           $disks = Get-HardDisk -VM $vm
+           $diskStatuses = @()
+           foreach ($d in $disks) {
+             $dcfg = Get-SpbmEntityConfiguration -HardDisk $d -ErrorAction SilentlyContinue
+             $diskStatuses += [pscustomobject]@{ name=$d.Name; status=(if ($dcfg) { $dcfg.ComplianceStatus } else { 'Unknown' }) }
+           }
+           $compliance += [pscustomobject]@{ vm=$vm.Name; vm_status=$vmStatus; disks=$diskStatuses }
+         }
+       }
+
+       $out = [pscustomobject]@{ vcenter='{{ vcenter_hostname }}'; policies=$policyResults; assignments=$assignResults; compliance=$compliance; timestamp=(Get-Date).ToString('s') }
+       $json = $out | ConvertTo-Json -Depth 8
+       Set-Content -Path '{{ report_path }}' -Value $json -Encoding UTF8
+       $json"
+  args:
+    stdin: ""
+  register: vsan_policies_cmd
+  changed_when: true
+  delegate_to: localhost

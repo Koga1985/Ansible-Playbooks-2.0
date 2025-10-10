@@ -1,0 +1,185 @@
+---
+- name: Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+      - vcenter_datacenter | length > 0
+    fail_msg: "vcenter_hostname/username/password and vcenter_datacenter are required."
+
+- name: Set defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    clusters: "{{ clusters | default([]) }}"
+    include_datastores_regex: "{{ include_datastores_regex | default('') }}"
+    out_dir: "{{ out_dir | default('/tmp') }}"
+    csv_clusters: "{{ csv_clusters | default(out_dir + '/capacity_clusters.csv') }}"
+    csv_datastores: "{{ csv_datastores | default(out_dir + '/capacity_datastores.csv') }}"
+    json_summary: "{{ json_summary | default(out_dir + '/capacity_summary.json') }}"
+    history_csv: "{{ history_csv | default(out_dir + '/capacity_history.csv') }}"
+    trend_days: "{{ trend_days | default(90) }}"
+    warn_free_pct: "{{ warn_free_pct | default(20) }}"
+    crit_free_pct: "{{ crit_free_pct | default(10) }}"
+
+- name: Generate capacity reports (PowerCLI)
+  ansible.builtin.command:
+    cmd: >-
+      pwsh -NoLogo -NoProfile -NonInteractive -Command
+      "$ErrorActionPreference='Stop';
+       Import-Module VMware.PowerCLI -ErrorAction Stop;
+       Set-PowerCLIConfiguration -InvalidCertificateAction {{ vcenter_validate_certs | ternary('Ignore','Fail') }} -Scope Session -Confirm:$false | Out-Null;
+
+       $null = Connect-VIServer -Server '{{ vcenter_hostname }}' -User '{{ vcenter_username }}' -Password '{{ vcenter_password }}' -ErrorAction Stop;
+
+       $dc = Get-Datacenter -Name '{{ vcenter_datacenter }}' -ErrorAction Stop
+
+       # Resolve clusters
+       $clusters = @()
+       {% if clusters %}
+       $clusters = @('{{ clusters | join(\"','\") }}' | ForEach-Object { Get-Cluster -Name $_ -ErrorAction SilentlyContinue }) | Where-Object { $_ }
+       {% else %}
+       $clusters = ($dc | Get-Cluster)
+       {% endif %}
+
+       # Datastore filter
+       $dsRegex = '{{ include_datastores_regex }}'
+       function DS-Match($ds) {
+         if ([string]::IsNullOrWhiteSpace($dsRegex)) { return $true }
+         return ($ds.Name -match $dsRegex)
+       }
+
+       $now = Get-Date
+       $rowsClusters = @()
+       $rowsDatastores = @()
+
+       foreach ($cl in $clusters) {
+         # Hosts & pCPU/pMem
+         $hosts = Get-VMHost -Location $cl | Where-Object { $_.ConnectionState -eq 'Connected' }
+         $pCpuCores = ($hosts | Measure-Object -Property NumCpu -Sum).Sum
+         $pCpuMhz  = ($hosts | Measure-Object -Property CpuMhz -Sum).Sum
+         $pMemGB   = [math]::Round((($hosts | Measure-Object -Property MemoryTotalGB -Sum).Sum),2)
+
+         # VM allocations
+         $vms = Get-VM -Location $cl
+         $vCpuAlloc = ($vms | Measure-Object -Property NumCpu -Sum).Sum
+         $vMemAllocGB = [math]::Round((($vms | Measure-Object -Property MemoryGB -Sum).Sum),2)
+
+         # Datastores summary (usable vs used)
+         $datastores = Get-Datastore -Location $cl | Where-Object { DS-Match $_ }
+         $dsCapTB = [math]::Round((($datastores | Measure-Object -Property CapacityGB -Sum).Sum / 1024),3)
+         $dsFreeTB = [math]::Round((($datastores | Measure-Object -Property FreeSpaceGB -Sum).Sum / 1024),3)
+         $dsUsedTB = [math]::Round(($dsCapTB - $dsFreeTB),3)
+         $dsFreePct = if ($dsCapTB -gt 0) { [math]::Round((100 * $dsFreeTB / $dsCapTB),1) } else { 0 }
+
+         # Headroom signals (simple)
+         $cpuOvercommit = if ($pCpuCores -gt 0) { [math]::Round(($vCpuAlloc / $pCpuCores),2) } else { 0 }
+         $memHeadroomGB = [math]::Round(($pMemGB - $vMemAllocGB),2)
+
+         # Status
+         $storageStatus = if ($dsFreePct -le {{ crit_free_pct }}) { 'CRIT' } elseif ($dsFreePct -le {{ warn_free_pct }}) { 'WARN' } else { 'OK' }
+
+         $rowsClusters += [pscustomobject]@{
+           Timestamp = $now.ToString('s')
+           Datacenter = $dc.Name
+           Cluster = $cl.Name
+           Hosts = $hosts.Count
+           pCPU_Cores = $pCpuCores
+           pCPU_TotalMHz = $pCpuMhz
+           pMem_GB = $pMemGB
+           vCPU_Allocated = $vCpuAlloc
+           vMem_Allocated_GB = $vMemAllocGB
+           CPU_Overcommit = $cpuOvercommit
+           DS_Capacity_TB = $dsCapTB
+           DS_Used_TB = $dsUsedTB
+           DS_Free_TB = $dsFreeTB
+           DS_Free_Pct = $dsFreePct
+           Storage_Status = $storageStatus
+         }
+
+         foreach ($ds in $datastores) {
+           $rowsDatastores += [pscustomobject]@{
+             Timestamp = $now.ToString('s')
+             Datacenter = $dc.Name
+             Cluster = $cl.Name
+             Datastore = $ds.Name
+             Type = $ds.Type
+             Capacity_TB = [math]::Round(($ds.CapacityGB/1024),3)
+             Free_TB = [math]::Round(($ds.FreeSpaceGB/1024),3)
+             Free_Pct = if ($ds.CapacityGB -gt 0) { [math]::Round((100 * $ds.FreeSpaceGB / $ds.CapacityGB),1) } else { 0 }
+           }
+         }
+       }
+
+       # Ensure output directory exists
+       $outDir = '{{ out_dir }}'
+       if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+
+       # Export CSVs
+       $rowsClusters | Export-Csv -NoTypeInformation -Encoding UTF8 -Path '{{ csv_clusters }}'
+       $rowsDatastores | Export-Csv -NoTypeInformation -Encoding UTF8 -Path '{{ csv_datastores }}'
+
+       # History append (one aggregate row per cluster per run)
+       $histPath = '{{ history_csv }}'
+       if (-not [string]::IsNullOrWhiteSpace($histPath)) {
+         $exists = Test-Path $histPath
+         if ($exists) {
+           $rowsClusters | Export-Csv -NoTypeInformation -Encoding UTF8 -Append -Path $histPath
+         } else {
+           $rowsClusters | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $histPath
+         }
+       }
+
+       # Compute trend if history exists
+       $trend = @()
+       if (-not [string]::IsNullOrWhiteSpace($histPath) -and (Test-Path $histPath)) {
+         $N = [int]'{{ trend_days }}'
+         $hist = Import-Csv -Path $histPath | Where-Object { $_.Datacenter -eq $dc.Name }
+         $cut = (Get-Date).AddDays(-$N)
+         $histN = $hist | Where-Object { [datetime]$_.Timestamp -ge $cut }
+         $clustersInHist = $histN | Select-Object -ExpandProperty Cluster -Unique
+         foreach ($c in $clustersInHist) {
+           $rows = $histN | Where-Object { $_.Cluster -eq $c } | Sort-Object {[datetime]$_.Timestamp}
+           if ($rows.Count -ge 2) {
+             $first = $rows | Select-Object -First 1
+             $last  = $rows | Select-Object -Last 1
+             $days = (([datetime]$last.Timestamp) - ([datetime]$first.Timestamp)).TotalDays
+             if ($days -gt 0) {
+               $trend += [pscustomobject]@{
+                 Cluster = $c
+                 Window_Days = [math]::Round($days,1)
+                 vCPU_Alloc_Delta_per_Day = [math]::Round((([int]$last.vCPU_Allocated - [int]$first.vCPU_Allocated) / $days), 3)
+                 vMem_Alloc_GB_Delta_per_Day = [math]::Round((([double]$last.vMem_Allocated_GB - [double]$first.vMem_Allocated_GB) / $days), 3)
+                 DS_Used_TB_Delta_per_Day = [math]::Round((([double]$last.DS_Used_TB - [double]$first.DS_Used_TB) / $days), 4)
+               }
+             }
+           }
+         }
+       }
+
+       $summary = [pscustomobject]@{
+         vcenter='{{ vcenter_hostname }}'
+         datacenter=$dc.Name
+         clusters_count=$clusters.Count
+         totals = @{
+           pCPU_Cores = ($rowsClusters | Measure-Object -Property pCPU_Cores -Sum).Sum
+           vCPU_Allocated = ($rowsClusters | Measure-Object -Property vCPU_Allocated -Sum).Sum
+           pMem_GB = [math]::Round((($rowsClusters | Measure-Object -Property pMem_GB -Sum).Sum),2)
+           vMem_Allocated_GB = [math]::Round((($rowsClusters | Measure-Object -Property vMem_Allocated_GB -Sum).Sum),2)
+           DS_Capacity_TB = [math]::Round((($rowsClusters | Measure-Object -Property DS_Capacity_TB -Sum).Sum),3)
+           DS_Used_TB = [math]::Round((($rowsClusters | Measure-Object -Property DS_Used_TB -Sum).Sum),3)
+           DS_Free_TB = [math]::Round((($rowsClusters | Measure-Object -Property DS_Free_TB -Sum).Sum),3)
+         }
+         trend = $trend
+         generated_at=$now.ToString('s')
+       }
+       $json = $summary | ConvertTo-Json -Depth 6
+       Set-Content -Path '{{ json_summary }}' -Value $json -Encoding UTF8
+       $json"
+  register: cap_cmd
+  changed_when: false
+  delegate_to: localhost
+
+- name: Show summary JSON (truncated)
+  ansible.builtin.debug:
+    msg: "{{ cap_cmd.stdout[:1500] }}... (see full at {{ json_summary }})"

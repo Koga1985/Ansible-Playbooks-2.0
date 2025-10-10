@@ -1,0 +1,37 @@
+---
+- hosts: localhost
+  gather_facts: false
+  roles:
+    - role: guest_customization_specs
+      vars:
+        vcenter_hostname: "vcsa.example.local"
+        vcenter_username: "{{ lookup('env','VCENTER_USERNAME') }}"
+        vcenter_password: "{{ lookup('env','VCENTER_PASSWORD') }}"
+        vcenter_validate_certs: false
+
+        specs:
+          - name: "win-std"
+            type: "windows"
+            description: "Windows Server base"
+            overwrite: true
+            windows:
+              full_name: "Acme IT"
+              org_name: "Acme Corp"
+              time_zone: 035
+              change_sid: true
+              admin_password: "{{ lookup('env','WIN_ADMIN_PWD') }}"
+              domain_join: { enabled: true, domain: "corp.example.com", username: "CORP\svc_join", password: "{{ lookup('env','JOIN_PWD') }}", oupath: "OU=Servers,DC=corp,DC=example,DC=com" }
+              hostname: "useVMName"
+            nics:
+              - { index: 0, type: "dhcp", dns_servers: ["10.10.10.10","10.10.10.11"], dns_domain: "corp.example.com" }
+
+          - name: "lin-std"
+            type: "linux"
+            description: "Linux base"
+            overwrite: true
+            linux:
+              domain: "corp.example.com"
+              time_zone: "UTC"
+              hwclock_utc: true
+            nics:
+              - { index: 0, type: "static", ip: "10.30.0.25", subnet: "255.255.255.0", gateway: ["10.30.0.1"], dns_servers: ["10.10.10.10","10.10.10.11"], dns_domain: "corp.example.com" }

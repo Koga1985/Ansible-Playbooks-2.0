@@ -1,0 +1,3 @@
+---
+# Uses PowerCLI via pwsh to manage vCenter Guest Customization Specs.
+collections: []

@@ -1,0 +1,12 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Export vSphere capacity headroom for clusters & datastores (vCPU/vMem/storage), maintain history, and compute growth trend; outputs CSV/JSON for BI tools.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["all"]
+    - name: Ubuntu
+      versions: ["all"]
+  galaxy_tags: ["vmware","capacity","reporting","bi","csv","trend"]
+dependencies: []

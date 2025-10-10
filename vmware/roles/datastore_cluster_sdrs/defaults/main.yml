@@ -1,0 +1,25 @@
+# vCenter connection
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+
+vcenter_datacenter: ""
+target_folder: ""
+
+sdrs:
+  name: "DSC-Prod"
+  create_if_missing: true
+  automation_level: "FullyAutomated"
+  enabled: true
+  io_balance: { enabled: true, latency_ms_threshold: 15, imbalance_threshold: 5 }
+  space_balance: { enabled: true, min_space_util_diff_pct: 5 }
+  evaluation_interval_minutes: 60
+
+membership:
+  ensure_datastores: []
+  eject_nonlisted: false
+  eject_destination_folder: ""
+
+apply_recommendations: false
+report_path: "/tmp/{{ sdrs.name | default('datastore-cluster') }}-sdrs-report.json"

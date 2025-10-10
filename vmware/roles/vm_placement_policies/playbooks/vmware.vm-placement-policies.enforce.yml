@@ -1,0 +1,29 @@
+---
+- hosts: localhost
+  gather_facts: false
+  roles:
+    - role: vm_placement_policies
+      vars:
+        vcenter_hostname: "vcsa.example.local"
+        vcenter_username: "{{ lookup('env','VCENTER_USERNAME') }}"
+        vcenter_password: "{{ lookup('env','VCENTER_PASSWORD') }}"
+        vcenter_validate_certs: false
+        cluster_name: "Compute-Cluster"
+
+        affinity_policies:
+          - { name: "web-aa", type: "separate", vm_tag: "app:web", enabled: true, mandatory: false }
+
+        host_affinity_policies:
+          - name: "db-az1-must"
+            vm_tag: "app:db"
+            host_group: { name: "AZ1", hosts: ["esxi01.lab.local","esxi02.lab.local"] }
+            policy: "must_run_on"
+            enabled: true
+
+        resource_pools:
+          - name: "RP-Web"
+            cpu: { reservation_mhz: 0, limit_mhz: -1, shares: "normal" }
+            memory: { reservation_mb: 0, limit_mb: -1, shares: "normal" }
+            vm_tag: "app:web"
+
+        report_path: "/tmp/vm-placement-policies-report.json"

@@ -1,0 +1,89 @@
+---
+- name: Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+      - vcenter_datacenter | length > 0
+      - sdrs.name | length > 0
+
+- name: Set defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    sdrs: "{{ sdrs | default({}) }}"
+    membership: "{{ membership | default({}) }}"
+    apply_recommendations: "{{ apply_recommendations | default(false) }}"
+    report_path: "{{ report_path | default('/tmp/%s-sdrs-report.json' | format(sdrs.name|default('datastore-cluster'))) }}"
+
+- name: Configure SDRS cluster and membership (PowerCLI)
+  ansible.builtin.command:
+    cmd: >-
+      pwsh -NoLogo -NoProfile -NonInteractive -Command
+      "$ErrorActionPreference='Stop';
+       Import-Module VMware.PowerCLI -ErrorAction Stop;
+       Set-PowerCLIConfiguration -InvalidCertificateAction {{ vcenter_validate_certs | ternary('Ignore','Fail') }} -Scope Session -Confirm:$false | Out-Null;
+       $null = Connect-VIServer -Server '{{ vcenter_hostname }}' -User '{{ vcenter_username }}' -Password '{{ vcenter_password }}';
+
+       $dc = Get-Datacenter -Name '{{ vcenter_datacenter }}' -ErrorAction Stop
+       $dsFolder = $dc | Get-Folder -Type Datastore | Select-Object -First 1
+       if ('{{ target_folder | default('') }}' -ne '') {
+         $f = Get-Folder -Name '{{ target_folder | default('') }}' -ErrorAction SilentlyContinue
+         if (-not $f) { $f = New-Folder -Name '{{ target_folder | default('') }}' -Location ($dc | Get-Folder -Type Datastore) }
+         $dsFolder = $f
+       }
+
+       $clusterName = '{{ sdrs.name }}'
+       $pod = Get-DatastoreCluster -Name $clusterName -ErrorAction SilentlyContinue
+       if (-not $pod -and {{ sdrs.create_if_missing | default(true) | ternary('$true','$false') }}) {
+         $pod = New-DatastoreCluster -Name $clusterName -Location $dsFolder
+       } elseif (-not $pod) { throw "DatastoreCluster $clusterName not found and create_if_missing=false" }
+
+       try { Set-DatastoreCluster -DatastoreCluster $pod -StorageDrsEnabled:{{ sdrs.enabled | default(true) | ternary('$true','$false') }} -Confirm:$false | Out-Null } catch { }
+       try { Set-DatastoreCluster -DatastoreCluster $pod -StorageDrsAutomationLevel {{ sdrs.automation_level | default('FullyAutomated') }} -Confirm:$false | Out-Null } catch { }
+       try { Set-DatastoreCluster -DatastoreCluster $pod -IOLoadBalanceEnabled:{{ sdrs.io_balance.enabled | default(true) | ternary('$true','$false') }} -SpaceLoadBalanceEnabled:{{ sdrs.space_balance.enabled | default(true) | ternary('$true','$false') }} -Confirm:$false | Out-Null } catch { }
+
+       # Membership ensure
+       $ensure = @('{{ membership.ensure_datastores | default([]) | join("','") }}')
+       $added = @(); $ejected = @()
+       foreach ($dsName in $ensure) {
+         if ([string]::IsNullOrWhiteSpace($dsName)) { continue }
+         $ds = Get-Datastore -Name $dsName -ErrorAction SilentlyContinue
+         if ($ds -and $ds.Parent.Name -ne $pod.Name) {
+           try { Move-Datastore -Datastore $ds -Destination $pod -Confirm:$false | Out-Null; $added += $ds.Name } catch { }
+         }
+       }
+
+       if ({{ membership.eject_nonlisted | default(false) | ternary('$true','$false') }}) {
+         $destFolderName = '{{ membership.eject_destination_folder | default('') }}'
+         if ($destFolderName -ne '') {
+           $destFolder = Get-Folder -Name $destFolderName -ErrorAction SilentlyContinue
+           if (-not $destFolder) { $destFolder = New-Folder -Name $destFolderName -Location ($dc | Get-Folder -Type Datastore) }
+           $members = Get-Datastore -Location $pod
+           foreach ($m in $members) {
+             if ($ensure -notcontains $m.Name) {
+               try { Move-Datastore -Datastore $m -Destination $destFolder -Confirm:$false | Out-Null; $ejected += $m.Name } catch { }
+             }
+           }
+         }
+       }
+
+       $recs = @(); try { $recs = Get-StorageDRSRecommendation -StoragePod $pod -ErrorAction SilentlyContinue } catch { }
+       if ({{ apply_recommendations | default(false) | ternary('$true','$false') }}) {
+         try { $recs | Apply-StorageDRSRecommendation -Confirm:$false | Out-Null } catch { }
+       }
+
+       $membersNow = (Get-Datastore -Location $pod | Select-Object -ExpandProperty Name)
+       $out = [pscustomobject]@{ vcenter='{{ vcenter_hostname }}'; datacenter='{{ vcenter_datacenter }}'; cluster=$pod.Name;
+         automation='{{ sdrs.automation_level | default('FullyAutomated') }}'; sdrs_enabled={{ sdrs.enabled | default(true) | ternary('$true','$false') }};
+         members=$membersNow; added=$added; ejected=$ejected; timestamp=(Get-Date).ToString('s') }
+       $json = $out | ConvertTo-Json -Depth 6
+       Set-Content -Path '{{ report_path }}' -Value $json -Encoding UTF8
+       $json"
+  register: sdrs_cmd
+  changed_when: true
+  delegate_to: localhost
+
+- name: Show summary JSON (truncated)
+  ansible.builtin.debug:
+    msg: "{{ sdrs_cmd.stdout[:1500] }}... (see full at {{ report_path }})"

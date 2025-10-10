@@ -1,0 +1,176 @@
+---
+- name: Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+    fail_msg: "vcenter_hostname/username/password are required."
+
+- name: Set defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    specs: "{{ specs | default([]) }}"
+    report_path: "{{ report_path | default('/tmp/guest-customization-specs-report.json') }}"
+
+- name: Ensure guest customization specs (Windows & Linux) and report
+  ansible.builtin.command:
+    cmd: >-
+      pwsh -NoLogo -NoProfile -NonInteractive -Command
+      "$ErrorActionPreference='Stop';
+       Import-Module VMware.PowerCLI -ErrorAction Stop;
+       Set-PowerCLIConfiguration -InvalidCertificateAction {{ vcenter_validate_certs | ternary('Ignore','Fail') }} -Scope Session -Confirm:$false | Out-Null;
+       $null = Connect-VIServer -Server '{{ vcenter_hostname }}' -User '{{ vcenter_username }}' -Password '{{ vcenter_password }}';
+
+       function Ensure-HostnameScheme([string]$hostSpec) {
+         # Supports: 'useVMName', 'prefix:XYZ', 'fixed:NAME'
+         if ([string]::IsNullOrWhiteSpace($hostSpec)) { return @{ Scheme='VM' } }
+         if ($hostSpec -match '^useVMName$') { return @{ Scheme='VM' } }
+         if ($hostSpec -match '^prefix:(.+)$') { return @{ Scheme='Prefix'; Prefix=$Matches[1] } }
+         if ($hostSpec -match '^fixed:(.+)$')  { return @{ Scheme='Fixed'; Prefix=$Matches[1] } }
+         return @{ Scheme='VM' }
+       }
+
+       $results = @()
+
+       foreach ($item in @({{ specs | to_json }})) {
+         $name = $item.name; $type = ($item.type).ToLower(); $desc = $item.description
+         $overwrite = [bool]$item.overwrite
+
+         $existing = Get-OSCustomizationSpec -Name $name -ErrorAction SilentlyContinue
+
+         if ($existing -and $overwrite) {
+           Remove-OSCustomizationSpec -OSCustomizationSpec $existing -Confirm:$false | Out-Null
+           $existing = $null
+         }
+
+         if (-not $existing) {
+           if ($type -eq 'windows') {
+             $w = $item.windows
+             $host = Ensure-HostnameScheme ($w.hostname)
+             $tz = $w.time_zone
+             $changeSid = [bool]$w.change_sid
+             $params = @{
+               Name = $name; Type = 'Windows'; Description = $desc
+               FullName = $w.full_name; OrgName = $w.org_name; ChangeSid = $changeSid
+               TimeZone = $tz
+             }
+             if ($w.product_key) { $params.ProductKey = $w.product_key }
+             $spec = New-OSCustomizationSpec @params
+
+             # Account & domain/workgroup
+             if ($w.admin_password) {
+               Set-OSCustomizationSpec -OSCustomizationSpec $spec -AdminPassword $w.admin_password -Confirm:$false | Out-Null
+               if ($w.auto_logon_count -ge 1) {
+                 Set-OSCustomizationSpec -OSCustomizationSpec $spec -AutoLogonCount ([int]$w.auto_logon_count) -Confirm:$false | Out-Null
+               }
+             }
+             if ($w.domain_join -and $w.domain_join.enabled) {
+               Set-OSCustomizationSpec -OSCustomizationSpec $spec -Domain $w.domain_join.domain -DomainUserName $w.domain_join.username -DomainPassword $w.domain_join.password -Confirm:$false | Out-Null
+               if ($w.domain_join.oupath) {
+                 Set-OSCustomizationSpec -OSCustomizationSpec $spec -ForMicrosoft -OrgUnit $w.domain_join.oupath -Confirm:$false | Out-Null
+               }
+             } elseif ($w.workgroup) {
+               Set-OSCustomizationSpec -OSCustomizationSpec $spec -JoinWorkgroup $w.workgroup -Confirm:$false | Out-Null
+             }
+
+             # Run-Once commands
+             if ($w.run_once) {
+               foreach ($cmd in $w.run_once) {
+                 try { Set-OSCustomizationSpec -OSCustomizationSpec $spec -RunOnce $cmd -AppendRunOnce -Confirm:$false | Out-Null } catch { }
+               }
+             }
+
+             # Hostname naming scheme
+             $host = Ensure-HostnameScheme ($w.hostname)
+             if ($host.Scheme -eq 'VM') {
+               try { Set-OSCustomizationSpec -OSCustomizationSpec $spec -NamingScheme VM -Confirm:$false | Out-Null } catch { }
+             } elseif ($host.Scheme -eq 'Prefix') {
+               try { Set-OSCustomizationSpec -OSCustomizationSpec $spec -NamingScheme Prefix -NamingPrefix $host.Prefix -Confirm:$false | Out-Null } catch { }
+             } elseif ($host.Scheme -eq 'Fixed') {
+               try { Set-OSCustomizationSpec -OSCustomizationSpec $spec -NamingScheme Fixed -NamingPrefix $host.Prefix -Confirm:$false | Out-Null } catch { }
+             }
+
+           } elseif ($type -eq 'linux') {
+             $l = $item.linux
+             $params = @{
+               Name = $name; Type = 'Linux'; Description = $desc
+             }
+             if ($l.domain)   { $params.DomainName = $l.domain }
+             if ($l.time_zone){ $params.TimeZone = $l.time_zone }
+             $spec = New-OSCustomizationSpec @params
+             if ($l.hwclock_utc -ne $null) {
+               try { Set-OSCustomizationSpec -OSCustomizationSpec $spec -HwClockUTC:([bool]$l.hwclock_utc) -Confirm:$false | Out-Null } catch { }
+             }
+             if ($l.script_text) {
+               try { Set-OSCustomizationSpec -OSCustomizationSpec $spec -ScriptText $l.script_text -Confirm:$false | Out-Null } catch { }
+             }
+           } else {
+             throw \"Unsupported type for $name (use 'windows' or 'linux')\"
+           }
+         } else {
+           $spec = $existing
+         }
+
+         # Rebuild NIC mappings: clear all existing, then create from desired list
+         try {
+           $maps = Get-OSCustomizationNicMapping -OSCustomizationSpec $spec -ErrorAction SilentlyContinue
+           foreach ($m in $maps) {
+             # There's no direct remove; recreate spec if needed. We'll try to overwrite positions.
+             # For safety, we reset positions we have in desired.
+           }
+         } catch { }
+
+         $nics = @()
+         if ($item.nics) { $nics = $item.nics }
+         # Build mapping set by position; vSphere NIC positions start at 1
+         $pos = 1
+         foreach ($nic in $nics) {
+           $mode = ($nic.type).ToLower()
+           $dns = @(); if ($nic.dns_servers) { $dns = $nic.dns_servers }
+           $domain = $nic.dns_domain
+
+           $existingMap = $null
+           try { $existingMap = Get-OSCustomizationNicMapping -OSCustomizationSpec $spec -Position $pos -ErrorAction SilentlyContinue } catch { }
+
+           if (-not $existingMap) {
+             if ($mode -eq 'dhcp') {
+               New-OSCustomizationNicMapping -OSCustomizationSpec $spec -Position $pos -IpMode UseDhcp | Out-Null
+             } else {
+               New-OSCustomizationNicMapping -OSCustomizationSpec $spec -Position $pos -IpMode UseStaticIP -IpAddress $nic.ip -SubnetMask $nic.subnet -DefaultGateway $nic.gateway | Out-Null
+             }
+             $existingMap = Get-OSCustomizationNicMapping -OSCustomizationSpec $spec -Position $pos
+           } else {
+             if ($mode -eq 'dhcp') {
+               Set-OSCustomizationNicMapping -OSCustomizationNicMapping $existingMap -IpMode UseDhcp | Out-Null
+             } else {
+               Set-OSCustomizationNicMapping -OSCustomizationNicMapping $existingMap -IpMode UseStaticIP -IpAddress $nic.ip -SubnetMask $nic.subnet -DefaultGateway $nic.gateway | Out-Null
+             }
+           }
+           if ($dns -and $dns.Count -gt 0) {
+             try { Set-OSCustomizationNicMapping -OSCustomizationNicMapping $existingMap -Dns $dns | Out-Null } catch { }
+           }
+           if ($domain) {
+             try { Set-OSCustomizationNicMapping -OSCustomizationNicMapping $existingMap -DnsDomain $domain | Out-Null } catch { }
+           }
+           $pos += 1
+         }
+
+         $results += [pscustomobject]@{ name=$name; type=$type; created=($existing -eq $null); nic_count=$nics.Length }
+       }
+
+       $out = [pscustomobject]@{
+         vcenter='{{ vcenter_hostname }}'
+         results=$results
+         timestamp=(Get-Date).ToString('s')
+       }
+       $json = $out | ConvertTo-Json -Depth 6
+       Set-Content -Path '{{ report_path }}' -Value $json -Encoding UTF8
+       $json"
+  register: gspec_cmd
+  changed_when: true
+  delegate_to: localhost
+
+- name: Show summary JSON (truncated)
+  ansible.builtin.debug:
+    msg: "{{ gspec_cmd.stdout[:1400] }}... (see full at {{ report_path }})"
