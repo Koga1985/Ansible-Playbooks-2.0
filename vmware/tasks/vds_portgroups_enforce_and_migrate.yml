@@ -1,0 +1,151 @@
+---
+# Enforce dvPortGroups on a VDS and migrate VMkernel / VM NICs.
+#
+# Required vars:
+#   vcenter_hostname, vcenter_username, vcenter_password, vcenter_validate_certs
+#   vcenter_datacenter
+#   dvs_name
+#
+# Portgroups to ensure:
+#   portgroups:
+#     - name: "PG-Prod-10"
+#       port_binding: "static"            # static | ephemeral | dynamic
+#       num_ports: 128
+#       vlan:
+#         mode: "access"                  # access | trunk
+#         id: 10                          # when mode=access
+#         trunks: ["20-30","100"]         # when mode=trunk (ranges or single)
+#       security:
+#         allow_promiscuous: false
+#         mac_changes: false
+#         forged_transmits: false
+#
+# VMkernel migrations (VSS→VDS or DVS→DVS):
+#   vmk_migrations:
+#     - esxi_hostname: "esxi01.lab.local"
+#       current_vmk: "vmk0"
+#       dest_portgroup: "PG-Prod-10"
+#       dest_dvs: "{{ dvs_name }}"
+#
+# VM NIC migrations (per VM):
+#   vm_nic_migrations:
+#     - vm: "app01"
+#       id_method: "mac"                  # mac | label
+#       id_value: "00:50:56:aa:bb:cc"     # NIC MAC or current label (e.g. "Network adapter 1")
+#       dest_portgroup: "PG-Prod-10"
+#
+# Notes:
+# - VMkernel moves may require host connectivity planning; test on a single host first.
+# - VM NIC changes are done in-place (no power-off).
+
+- name: Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname|length > 0
+      - vcenter_username|length > 0
+      - vcenter_password|length > 0
+      - vcenter_datacenter|length > 0
+      - dvs_name|length > 0
+    fail_msg: "vCenter creds + vcenter_datacenter + dvs_name are required."
+
+- name: Set defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    portgroups: "{{ portgroups | default([]) }}"
+    vmk_migrations: "{{ vmk_migrations | default([]) }}"
+    vm_nic_migrations: "{{ vm_nic_migrations | default([]) }}"
+
+##############################################################################
+# 1) Ensure dvPortGroups exist with desired VLAN + security settings
+##############################################################################
+- name: Enforce dvPortGroups on {{ dvs_name }}
+  community.vmware.vmware_dvs_portgroup:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter_name: "{{ vcenter_datacenter }}"
+    switch_name: "{{ dvs_name }}"
+    portgroup_name: "{{ item.name }}"
+    state: present
+    port_binding: "{{ item.port_binding | default('static') }}"
+    num_ports: "{{ item.num_ports | default(128) }}"
+    vlan_id: "{{ (item.vlan.mode == 'access') | ternary(item.vlan.id, omit) }}"
+    vlan_trunk_range: >-
+      {{ (item.vlan.mode == 'trunk') | ternary(item.vlan.trunks | join(','), omit) }}
+    # Security policies
+    allow_promiscuous: "{{ item.security.allow_promiscuous | default(false) }}"
+    mac_changes: "{{ item.security.mac_changes | default(false) }}"
+    forged_transmits: "{{ item.security.forged_transmits | default(false) }}"
+  loop: "{{ portgroups }}"
+  loop_control: { label: "{{ item.name }}" }
+  delegate_to: localhost
+
+##############################################################################
+# 2) Migrate VMkernel NICs to target dvPortGroups (safe, host-by-host)
+##############################################################################
+- name: Migrate VMkernel NICs to dvPortGroups
+  community.vmware.vmware_migrate_vmk:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    esxi_hostname: "{{ item.esxi_hostname }}"
+    current_vmk: "{{ item.current_vmk }}"
+    dvswitch_name: "{{ item.dest_dvs | default(dvs_name) }}"
+    portgroup_name: "{{ item.dest_portgroup }}"
+    # Optional: if moving from VSS, module handles uplink mapping internally
+    # Optional params like 'migrate_subnet' can be added if your version supports them
+    state: present
+  loop: "{{ vmk_migrations }}"
+  loop_control: { label: "{{ item.esxi_hostname }}: {{ item.current_vmk }} → {{ item.dest_portgroup }}" }
+  delegate_to: localhost
+
+##############################################################################
+# 3) Migrate VM NICs to target dvPortGroups (no power-off)
+##############################################################################
+- name: Build per-VM networks payload
+  ansible.builtin.set_fact:
+    _vm_network_map: >-
+      {{
+        vm_nic_migrations
+        | groupby('vm')
+        | items2dict(
+            key_name='key',
+            value_name='value',
+            value_func=lambda l: l
+          )
+      }}
+
+- name: Migrate VM NICs to new dvPortGroups
+  community.vmware.vmware_guest_network:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ item.key }}"             # VM name
+    state: present
+    networks: >-
+      {{
+        item.value | map('extract', {
+          'mac': 'id_value' if (item2.id_method == 'mac') else None
+        })
+      }}
+  vars:
+    # Build the "networks" structure expected by vmware_guest_network
+    networks: >-
+      {{
+        item.value
+        | map('combine', {
+            'name': item2.dest_portgroup,
+            # selector: choose mac or label to target the correct NIC
+            (item2.id_method == 'mac') | ternary('mac', 'label'):
+              item2.id_value
+          })
+        | list
+      }}
+  with_items: "{{ _vm_network_map | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  delegate_to: localhost
+  vars_prompt: []
