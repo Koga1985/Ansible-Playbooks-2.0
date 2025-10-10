@@ -1,0 +1,18 @@
+---
+- hosts: localhost
+  gather_facts: false
+  roles:
+    - role: template_pipeline
+      vars:
+        vcenter_hostname: "vcsa.example.local"
+        vcenter_username: "{{ lookup('env','VCENTER_USERNAME') }}"
+        vcenter_password: "{{ lookup('env','VCENTER_PASSWORD') }}"
+        vcenter_validate_certs: false
+        content_library:
+          name: "Gold-Images"
+          create_if_missing: true
+          datastore: "vsanDatastore"
+        intake:
+          - { name: "win2022-core", version: "", source_type: "ova", source_path: "/exports/win2022-core.ova", pin_alias: "current", keep_versions: 4 }
+          - { name: "ubuntu-24.04", version: "", source_type: "ovf", source_path: "/exports/ubuntu-24.04/", pin_alias: "current", keep_versions: 3 }
+        report_path: "/tmp/template-pipeline-report.json"
