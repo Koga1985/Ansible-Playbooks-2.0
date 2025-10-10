@@ -1,0 +1,7 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Create an Infoblox inventory model: EA definitions, Network (DHCP/IPAM) views, DNS views, VLANs, and IPv4/IPv6 network containers.
+  license: MIT
+  min_ansible_version: "2.15"
+  galaxy_tags: ["infoblox","nios","ipam","dns","views","vlans","ea","inventory"]
+dependencies: []

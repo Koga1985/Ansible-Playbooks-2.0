@@ -1,0 +1,31 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: infoblox_inventory_model
+      vars:
+        nios_host: "nios.example.local"
+        nios_username: "{{ lookup('env','NIOS_USER') }}"
+        nios_password: "{{ lookup('env','NIOS_PASS') }}"
+        nios_validate_certs: false
+
+        ea_definitions:
+          - { name: "Environment", type: "list", list_values: ["prod","dev","stage"], flags: "IL" }
+          - { name: "AppTier", type: "list", list_values: ["web","app","db"], flags: "IL" }
+          - { name: "Owner", type: "string", flags: "L" }
+
+        network_views:
+          - { name: "Corp-NV", comment: "Corporate networks", extattrs: { Environment: { value: "prod" } }, state: present }
+
+        dns_views:
+          - { name: "Corp-View", comment: "Split-horizon corporate DNS", state: present }
+
+        vlans:
+          - { name: "VLAN10-Users", id: 10, parent: "default", description: "User access" }
+
+        network_containers_v4:
+          - { cidr: "10.0.0.0/8", view: "Corp-NV", comment: "All corp space" }
+
+        network_containers_v6:
+          - { cidr: "2001:db8::/32", view: "Corp-NV", comment: "Global v6" }

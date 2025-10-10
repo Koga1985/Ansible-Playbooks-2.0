@@ -1,0 +1,43 @@
+# Connection (Infoblox NIOS WAPI)
+nios_host: ""
+nios_username: ""
+nios_password: ""
+nios_validate_certs: false
+
+# Extensible Attribute (EA) Definitions you want standardized across objects
+ea_definitions: []
+# - name: "Environment"
+#   type: "list"                      # string|integer|date|list|url|email|checkbox
+#   list_values: ["prod","dev","stage"]
+#   flags: "IL"                       # I: Inheritable, L: Cloud-API visible (examples)
+#   default_value: ""
+#   comment: "Workload environment"
+#   state: present
+
+# Network (DHCP/IPAM) views
+network_views: []
+# - { name: "Corp-NV", comment: "Corporate networks", extattrs: { Environment: { value: "prod" } }, state: present }
+
+# DNS views
+dns_views: []
+# - { name: "Corp-View", comment: "Split-horizon corporate DNS", state: present }
+
+# VLANs (optional). Parent is typically 'default' VLAN view/range unless you use custom.
+vlans: []
+# - name: "VLAN10-Users"
+#   id: 10
+#   parent: "default"
+#   description: "User access"
+#   contact: ""
+#   department: ""
+#   reserved: false
+#   extattrs: { Environment: { value: "prod" }, AppTier: { value: "web" } }
+#   state: present
+
+# IPv4 Network containers
+network_containers_v4: []
+# - { cidr: "10.0.0.0/8", view: "Corp-NV", comment: "All corp space", extattrs: { Environment: { value: "prod" } }, state: present }
+
+# IPv6 Network containers
+network_containers_v6: []
+# - { cidr: "2001:db8::/32", view: "Corp-NV", comment: "Global v6", state: present }
