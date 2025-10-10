@@ -1,0 +1,27 @@
+# vCenter connection
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+vcenter_validate_certs: false
+
+# Target cluster
+vcenter_datacenter: ""
+cluster_name: ""
+
+# vSAN architecture & features
+vsan:
+  enabled: true
+  architecture: "osa"            # "osa" | "esa"
+  auto_claim: false
+  data_reduction: "disabled"     # OSA: disabled | compress_only | dedup_compress
+  encryption: false
+  verbose: false
+
+# Fault domains (optional)
+fault_domains: []
+# - name: "FD-AZ1"
+#   hosts: ["esxi01.lab.local","esxi02.lab.local"]
+
+# Health
+run_health_checks: true
+health_report_path: "/tmp/{{ cluster_name }}-vsan-health.json"

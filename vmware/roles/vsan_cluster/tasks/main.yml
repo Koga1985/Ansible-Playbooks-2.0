@@ -1,0 +1,110 @@
+---
+- name: Assert required inputs
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname | length > 0
+      - vcenter_username | length > 0
+      - vcenter_password | length > 0
+      - cluster_name | length > 0
+    fail_msg: "vcenter_hostname/username/password and cluster_name are required."
+
+- name: Set defaults
+  ansible.builtin.set_fact:
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    run_health_checks: "{{ run_health_checks | default(true) }}"
+    fault_domains: "{{ fault_domains | default([]) }}"
+    vsan: "{{ vsan | default({'enabled': true, 'architecture': 'osa', 'auto_claim': false, 'data_reduction':'disabled', 'encryption': false, 'verbose': false}) }}"
+    health_report_path: "{{ health_report_path | default('/tmp/%s-vsan-health.json' | format(cluster_name)) }}"
+
+- name: Configure vSAN (ESA/OSA), Fault Domains, Health (PowerCLI)
+  ansible.builtin.command:
+    cmd: >-
+      pwsh -NoLogo -NoProfile -NonInteractive -Command
+      "$ErrorActionPreference='Stop';
+       Import-Module VMware.PowerCLI -ErrorAction Stop;
+       Set-PowerCLIConfiguration -InvalidCertificateAction {{ vcenter_validate_certs | ternary('Ignore','Fail') }} -Confirm:$false | Out-Null;
+
+       $server = Connect-VIServer -Server '{{ vcenter_hostname }}' -User '{{ vcenter_username }}' -Password '{{ vcenter_password }}' -ErrorAction Stop;
+       $cluster = Get-Cluster -Name '{{ cluster_name }}' -ErrorAction Stop;
+
+       if ({{ vsan.enabled | ternary('$true','$false') }}) {
+         if (-not $cluster.VsanEnabled) {
+           if ({{ vsan.auto_claim | ternary('$true','$false') }}) {
+             Set-Cluster -Cluster $cluster -VsanEnabled:$true -VsanAutoClaimStorage:$true -Confirm:$false | Out-Null;
+           } else {
+             Set-Cluster -Cluster $cluster -VsanEnabled:$true -Confirm:$false | Out-Null;
+           }
+         }
+       } else {
+         if ($cluster.VsanEnabled) { Set-Cluster -Cluster $cluster -VsanEnabled:$false -Confirm:$false | Out-Null }
+       }
+
+       try { $cfg = Get-VsanClusterConfiguration -Cluster $cluster -ErrorAction Stop } catch { $cfg = $null }
+
+       if ($cfg) {
+         if ('{{ vsan.architecture | lower }}' -eq 'esa') {
+           try { Set-VsanClusterConfiguration -Cluster $cluster -ESAEnabled:$true -Confirm:$false | Out-Null } catch { }
+           try { Set-VsanClusterConfiguration -Cluster $cluster -CompressionEnabled:{{ (vsan.data_reduction | lower) != 'disabled' | ternary('$true','$false') }} -Confirm:$false | Out-Null } catch { }
+         } else {
+           $dedup = $false; $compress = $false;
+           switch ('{{ vsan.data_reduction | lower }}') {
+             'dedup_compress' { $dedup = $true; $compress = $true }
+             'compress_only'  { $dedup = $false; $compress = $true }
+             default          { $dedup = $false; $compress = $false }
+           }
+           try { Set-VsanClusterConfiguration -Cluster $cluster -DedupEnabled:$dedup -CompressionEnabled:$compress -Confirm:$false | Out-Null } catch { }
+         }
+         if ({{ vsan.encryption | ternary('$true','$false') }}) {
+           try { Set-VsanClusterConfiguration -Cluster $cluster -EncryptionEnabled:$true -Confirm:$false | Out-Null } catch { }
+         }
+       }
+
+       # Fault Domains
+       $desired = @(
+         {% for fd in fault_domains %}
+         @{ Name='{{ fd.name }}'; Hosts=@({{ fd.hosts | map('quote') | join(', ') }}) },
+         {% endfor %}
+       );
+       if ($desired.Count -gt 0) {
+         try { $existing = Get-VsanFaultDomain -Cluster $cluster } catch { $existing = @() }
+         foreach ($fd in $desired) {
+           $cur = $existing | Where-Object { $_.Name -eq $fd.Name } | Select-Object -First 1
+           $hostObjs = @()
+           foreach ($hn in $fd.Hosts) { $h = Get-VMHost -Name $hn -ErrorAction SilentlyContinue; if ($h) { $hostObjs += $h } }
+           if ($null -eq $cur) {
+             if ($hostObjs.Count -gt 0) { New-VsanFaultDomain -Cluster $cluster -Name $fd.Name -Hosts $hostObjs -Confirm:$false | Out-Null }
+           } else {
+             try { Set-VsanFaultDomain -FaultDomain $cur -Hosts $hostObjs -Confirm:$false | Out-Null } catch { }
+           }
+         }
+       }
+
+       # Health
+       $healthOut = $null
+       if ({{ run_health_checks | ternary('$true','$false') }}) {
+         try { $healthOut = Test-VsanClusterHealth -Cluster $cluster -IncludeOnlineHealth -TimeoutSeconds 900 }
+         catch { try { $healthOut = Get-VsanClusterHealth -Cluster $cluster } catch { $healthOut = $null } }
+       }
+
+       $report = [pscustomobject]@{
+         vcenter   = '{{ vcenter_hostname }}';
+         cluster   = '{{ cluster_name }}';
+         vsan      = @{
+           enabled = $cluster.VsanEnabled
+           architecture = '{{ vsan.architecture }}'
+           encryption = {{ vsan.encryption | ternary('$true','$false') }}
+         };
+         faultDomains = @($desired | ForEach-Object { $_.Name });
+         health    = if ($healthOut) { ($healthOut | Select-Object -Property *) } else { $null };
+         timestamp = (Get-Date).ToString('s');
+       }
+       $json = $report | ConvertTo-Json -Depth 6;
+       Set-Content -Path '{{ health_report_path }}' -Value $json -Encoding UTF8;
+       $json"
+  register: vsan_cmd
+  changed_when: true
+  delegate_to: localhost
+
+- name: Show health summary
+  ansible.builtin.debug:
+    var: vsan_cmd.stdout

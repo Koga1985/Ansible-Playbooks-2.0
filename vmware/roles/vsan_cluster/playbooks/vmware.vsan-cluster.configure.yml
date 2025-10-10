@@ -1,0 +1,22 @@
+---
+- hosts: localhost
+  gather_facts: false
+  roles:
+    - role: vsan_cluster
+      vars:
+        vcenter_hostname: "vcsa.example.local"
+        vcenter_username: "{{ lookup('env','VCENTER_USERNAME') }}"
+        vcenter_password: "{{ lookup('env','VCENTER_PASSWORD') }}"
+        vcenter_validate_certs: false
+        cluster_name: "Compute-Cluster"
+        vsan:
+          enabled: true
+          architecture: "osa"
+          auto_claim: false
+          data_reduction: "dedup_compress"
+          encryption: false
+        fault_domains:
+          - { name: "FD-AZ1", hosts: ["esxi01.lab.local","esxi02.lab.local"] }
+          - { name: "FD-AZ2", hosts: ["esxi03.lab.local","esxi04.lab.local"] }
+        run_health_checks: true
+        health_report_path: "/tmp/Compute-Cluster-vsan-health.json"
