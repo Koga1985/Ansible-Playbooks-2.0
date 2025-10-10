@@ -1,0 +1,35 @@
+# Connection (Infoblox NIOS WAPI)
+nios_host: ""
+nios_username: ""
+nios_password: ""
+nios_validate_certs: false
+nios_wapi_version: "v2.12"   # adjust to your NIOS
+
+# Upgrade source
+image_url: ""                # http or https URL to the NIOS .bin (controller will download then upload)
+image_file: ""               # alternatively, a local path already on the controller
+target_version: ""           # e.g., "9.0.0-1"
+checksum_sha256: ""          # optional integrity check for image_file
+
+# Execution
+dry_run: true                # when true, role builds plan & validations only (no upload or schedule calls)
+activate_now: false          # if true (and not dry_run), attempt to trigger activation immediately after staging
+reboot_after_activate: false # if true, request member reboot after activation
+
+# Staging / waves: define member names per wave for rolling upgrade
+waves: []
+# - name: "wave1-edge"
+#   members: ["nios-edge-01","nios-edge-02"]
+#   drain_services: ["dns","dhcp"]  # which to gracefully disable first (best-effort)
+#   pre_window_note: "After-hours window 22:00-00:00 ET"
+# - name: "wave2-core"
+#   members: ["nios-core-01","nios-core-02"]
+#   drain_services: ["dns"]
+
+# Validation checks
+ping_check: true
+wapi_health_check: true
+
+# Output
+plan_dir: "/tmp/infoblox-upgrade-plan"
+report_path: "/tmp/infoblox-grid-upgrade-report.json"

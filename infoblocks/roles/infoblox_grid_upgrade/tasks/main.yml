@@ -1,0 +1,199 @@
+---
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - nios_host | length > 0
+      - nios_username | length > 0
+      - nios_password | length > 0
+    fail_msg: "Please set nios_host/nios_username/nios_password."
+
+- name: Ensure plan directory exists
+  ansible.builtin.file:
+    path: "{{ plan_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Set WAPI base & creds
+  ansible.builtin.set_fact:
+    _wapi_base: "https://{{ nios_host }}/wapi/{{ nios_wapi_version }}"
+    _creds:
+      user: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      force_basic_auth: true
+      validate_certs: "{{ nios_validate_certs }}"
+
+# ---------------- PRECHECKS ----------------
+- name: WAPI grid info
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/grid"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params: { _return_as_object: 1 }
+    **_creds
+  register: grid_get
+
+- name: List members with versions
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/member"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params: { _return_as_object: 1, _max_results: 1000, _return_fields%2B: "host_name,platform,hardware_type,service_status,virtual_cpu_status,product_version" }
+    **_creds
+  register: members_list
+
+- name: Optionally ping-check members
+  when: ping_check | bool
+  ansible.builtin.shell: "ping -c 1 -W 1 {{ item['vip_setting']['address'] | default(item['lan1']['v4addr'] | default('')) }} >/dev/null 2>&1 && echo OK || echo FAIL"
+  args: { executable: /bin/bash }
+  loop: "{{ (members_list.json.result | default([])) }}"
+  loop_control: { label: "{{ item.name | default(item.host_name | default('member')) }}" }
+  register: ping_results
+  changed_when: false
+  failed_when: false
+
+- name: Write precheck summary
+  ansible.builtin.copy:
+    dest: "{{ plan_dir }}/precheck.json"
+    mode: "0644"
+    content: >-
+      {{
+        {
+          "grid": (grid_get.json.result[0] | default({})),
+          "members": (members_list.json.result | default([])),
+          "ping": (ping_results.results | default([]) | map(attribute='stdout') | list),
+          "target_version": target_version
+        } | to_nice_json
+      }}
+
+# ---------------- IMAGE STAGING ----------------
+- name: Download image from URL (if provided)
+  when: image_url | length > 0
+  ansible.builtin.get_url:
+    url: "{{ image_url }}"
+    dest: "{{ plan_dir }}/nios_image.bin"
+    mode: "0644"
+  register: dl_img
+
+- name: Set image path fact
+  ansible.builtin.set_fact:
+    _img_path: >-
+      {%- if image_file | length > 0 -%}{{ image_file }}
+      {%- elif dl_img is defined -%}{{ dl_img.dest }}
+      {%- else -%}""{%- endif -%}
+
+- name: Fail if attempting real run without image
+  when: (not dry_run | bool) and (_img_path | length == 0)
+  ansible.builtin.fail:
+    msg: "No image_file or downloadable image_url specified."
+
+- name: Optional SHA256 checksum verify
+  when: checksum_sha256 | length > 0 and (_img_path | length > 0)
+  ansible.builtin.shell: "sha256sum {{ _img_path }} | awk '{print $1}'"
+  register: shasum
+  changed_when: false
+
+- name: Assert checksum matches
+  when: checksum_sha256 | length > 0 and (_img_path | length > 0)
+  ansible.builtin.assert:
+    that: [ "shasum.stdout.strip() == checksum_sha256" ]
+    fail_msg: "SHA256 mismatch for NIOS image."
+
+# Upload via WAPI (best-effort). Some versions support /grid?_function=upload_file
+- name: Upload image to Grid (best-effort; may vary by NIOS)
+  when: (not dry_run | bool) and (_img_path | length > 0)
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/grid?_function=upload_file"
+    method: POST
+    body_format: form-multipart
+    body:
+      file: "{{ lookup('file', _img_path) }}"
+      filename: "nios_image.bin"
+    status_code: [200,201,400]
+    **_creds
+  register: upload_resp
+  failed_when: false
+
+- name: Save upload response
+  when: upload_resp is defined
+  ansible.builtin.copy:
+    dest: "{{ plan_dir }}/upload_response.json"
+    mode: "0644"
+    content: "{{ upload_resp | to_nice_json }}"
+
+# ---------------- WAVES / DRAIN / SCHEDULE ----------------
+- name: Iterate waves to create plan files and (optionally) schedule
+  vars:
+    w: "{{ item }}"
+  block:
+    - name: Write wave plan
+      ansible.builtin.copy:
+        dest: "{{ plan_dir }}/{{ w.name | default('wave') }}.json"
+        mode: "0644"
+        content: >-
+          {{
+            {
+              "wave": w,
+              "target_version": target_version,
+              "activate_now": activate_now,
+              "reboot_after_activate": reboot_after_activate
+            } | to_nice_json
+          }}
+
+    - name: Best-effort service drain (DNS/DHCP) by member — plan-only or execute
+      vars:
+        drain: "{{ w.drain_services | default([]) }}"
+      block:
+        - name: Disable DNS service (plan-only when dry_run=true)
+          when: "'dns' in drain"
+          ansible.builtin.debug:
+            msg: "Would disable DNS on members in wave {{ w.name }} (dry_run={{ dry_run }})"
+        - name: Disable DHCP service (plan-only when dry_run=true)
+          when: "'dhcp' in drain"
+          ansible.builtin.debug:
+            msg: "Would disable DHCP on members in wave {{ w.name }} (dry_run={{ dry_run }})"
+  loop: "{{ waves | default([]) }}"
+
+# ---------------- ACTIVATE / REBOOT (best-effort) ----------------
+- name: Attempt activation (best-effort; may require specific NIOS function)
+  when: (not dry_run | bool) and (activate_now | bool)
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/grid?_function=activate_software"
+    method: POST
+    headers: { Content-Type: "application/json" }
+    body_format: json
+    body: >-
+      { "reboot_after_activate": {{ reboot_after_activate | bool | tojson }} }
+    status_code: [200,400]
+    **_creds
+  register: activate_resp
+  failed_when: false
+
+- name: Save activate response (if any)
+  when: activate_resp is defined
+  ansible.builtin.copy:
+    dest: "{{ plan_dir }}/activate_response.json"
+    mode: "0644"
+    content: "{{ activate_resp | to_nice_json }}"
+
+# ---------------- REPORT ----------------
+- name: Write final report
+  ansible.builtin.copy:
+    dest: "{{ report_path }}"
+    mode: "0644"
+    content: >-
+      {{
+        {
+          "grid": (grid_get.json.result[0] | default({})),
+          "members": (members_list.json.result | default([])),
+          "target_version": target_version,
+          "dry_run": dry_run,
+          "image": _img_path | default(""),
+          "upload_response": (upload_resp | default({})),
+          "activate_response": (activate_resp | default({})),
+          "waves": waves,
+          "plan_dir": plan_dir,
+          "timestamp": ansible_date_time.iso8601
+        } | to_nice_json
+      }}

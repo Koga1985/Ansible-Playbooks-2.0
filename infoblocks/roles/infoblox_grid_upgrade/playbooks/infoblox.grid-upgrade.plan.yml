@@ -1,0 +1,22 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: infoblox_grid_upgrade
+      vars:
+        nios_host: "nios.example.local"
+        nios_username: "{{ lookup('env','NIOS_USER') }}"
+        nios_password: "{{ lookup('env','NIOS_PASS') }}"
+        nios_validate_certs: false
+        nios_wapi_version: "v2.12"
+        dry_run: true
+        image_url: "https://repo.example.com/nios/nios-9.0.0-1.bin"
+        target_version: "9.0.0-1"
+        waves:
+          - name: "wave1-edge"
+            members: ["nios-edge-01","nios-edge-02"]
+            drain_services: ["dns","dhcp"]
+          - name: "wave2-core"
+            members: ["nios-core-01","nios-core-02"]
+            drain_services: ["dns"]

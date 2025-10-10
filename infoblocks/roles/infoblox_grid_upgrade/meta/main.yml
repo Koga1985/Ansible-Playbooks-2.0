@@ -1,0 +1,7 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Stage and orchestrate Infoblox NIOS upgrades in waves; precheck inventory, optionally upload image, create/execute plan, and attempt activation (best-effort). Includes member drain placeholders and rollback-friendly dry-run mode.
+  license: MIT
+  min_ansible_version: "2.15"
+  galaxy_tags: ["infoblox","nios","upgrade","orchestration","grid"]
+dependencies: []
