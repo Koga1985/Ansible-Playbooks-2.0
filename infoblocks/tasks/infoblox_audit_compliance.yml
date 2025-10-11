@@ -1,0 +1,441 @@
+# tasks/infoblox_audit_compliance.yml
+---
+- name: Validate Infoblox connection vars
+  ansible.builtin.assert:
+    that:
+      - nios_host | length > 0
+      - nios_username | length > 0
+      - nios_password | length > 0
+    fail_msg: "Set nios_host / nios_username / nios_password."
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    nios_validate_certs: "{{ nios_validate_certs | default(false) }}"
+    nios_wapi_version: "{{ nios_wapi_version | default('v2.12') }}"
+    report_dir: "{{ report_dir | default('/tmp/infoblox-audit') }}"
+    desired_files: "{{ desired_files | default([]) }}"
+    # Which fields to evaluate for “changed” (beyond existence)
+    _cmp_fields:
+      network_view: ["comment", "extattrs"]
+      dns_view: ["comment", "extattrs"]
+      vlan: ["id", "parent", "description", "extattrs"]
+      netcont_v4: ["comment", "extattrs"]
+      netcont_v6: ["comment", "extattrs"]
+      zone_auth: ["ns_group", "extattrs"]
+
+- name: Ensure report directory
+  ansible.builtin.file:
+    path: "{{ report_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Build WAPI base & creds
+  ansible.builtin.set_fact:
+    _wapi_base: "https://{{ nios_host }}/wapi/{{ nios_wapi_version }}"
+    _creds:
+      user: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      force_basic_auth: true
+      validate_certs: "{{ nios_validate_certs }}"
+
+# ---------------------------------------------------------------------
+# 1) LOAD DESIRED STATE FROM YAML FILES (merged)
+# ---------------------------------------------------------------------
+- name: Initialize desired containers
+  ansible.builtin.set_fact:
+    d_network_views: "{{ d_network_views | default([]) }}"
+    d_dns_views: "{{ d_dns_views | default([]) }}"
+    d_vlans: "{{ d_vlans | default([]) }}"
+    d_netcont_v4: "{{ d_netcont_v4 | default([]) }}"
+    d_netcont_v6: "{{ d_netcont_v6 | default([]) }}"
+    d_zones_auth: "{{ d_zones_auth | default([]) }}"
+
+- name: Merge desired files
+  vars: { _f: "{{ item }}" }
+  block:
+    - name: Include desired file {{ _f }}
+      ansible.builtin.include_vars:
+        file: "{{ _f }}"
+        name: _fromfile
+    - name: Extend desired sets from {{ _f }}
+      ansible.builtin.set_fact:
+        d_network_views: "{{ d_network_views + (_fromfile.network_views | default([])) }}"
+        d_dns_views: "{{ d_dns_views + (_fromfile.dns_views | default([])) }}"
+        d_vlans: "{{ d_vlans + (_fromfile.vlans | default([])) }}"
+        d_netcont_v4: "{{ d_netcont_v4 + (_fromfile.network_containers_v4 | default([])) }}"
+        d_netcont_v6: "{{ d_netcont_v6 + (_fromfile.network_containers_v6 | default([])) }}"
+        d_zones_auth: "{{ d_zones_auth + (_fromfile.zones_auth | default([])) }}"
+  loop: "{{ desired_files }}"
+
+# ---------------------------------------------------------------------
+# 2) READ ACTUAL STATE FROM INFOBLOX (READ-ONLY)
+# ---------------------------------------------------------------------
+- name: Get Network Views (actual)
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/networkview"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      _max_results: 5000
+      "_return_fields+": "name,comment,extattrs"
+    **_creds
+  register: a_netviews
+
+- name: Get DNS Views (actual)
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/dns_view"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      _max_results: 5000
+      "_return_fields+": "name,comment,extattrs"
+    **_creds
+  register: a_dnsviews
+
+- name: Get VLANs (actual)
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/vlan"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      _max_results: 5000
+      "_return_fields+": "name,id,parent,description,extattrs"
+    **_creds
+  register: a_vlans
+  failed_when: false
+
+- name: Get IPv4 Network CONTAINERS (actual)
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/networkcontainer"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      _max_results: 5000
+      "_return_fields+": "network,network_view,comment,extattrs"
+    **_creds
+  register: a_netcont_v4
+  failed_when: false
+
+- name: Get IPv6 Network CONTAINERS (actual)
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/ipv6networkcontainer"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      _max_results: 5000
+      "_return_fields+": "network,network_view,comment,extattrs"
+    **_creds
+  register: a_netcont_v6
+  failed_when: false
+
+- name: Get Authoritative Zones (actual)
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/zone_auth"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      _max_results: 10000
+      "_return_fields+": "fqdn,view,ns_group,extattrs"
+    **_creds
+  register: a_zones
+  failed_when: false
+
+# ---------------------------------------------------------------------
+# 3) NORMALIZE + KEY BY IDENTIFIER FOR COMPARISON
+# ---------------------------------------------------------------------
+- name: Build keyed maps (desired)
+  ansible.builtin.set_fact:
+    kd_netviews: "{{ dict( (d_network_views | map(attribute='name') | list) | zip(d_network_views) ) }}"
+    kd_dnsviews: "{{ dict( (d_dns_views | map(attribute='name') | list) | zip(d_dns_views) ) }}"
+    kd_vlans: "{{ dict( (d_vlans | map(attribute='name') | list) | zip(d_vlans) ) }}"
+    kd_netcont_v4: "{{ dict( ((d_netcont_v4 | map(attribute='cidr') | list) | zip(d_netcont_v4)) ) }}"
+    kd_netcont_v6: "{{ dict( ((d_netcont_v6 | map(attribute='cidr') | list) | zip(d_netcont_v6)) ) }}"
+    kd_zones: "{{ dict( ((d_zones_auth | map('extract', attribute='fqdn') | list) | zip(d_zones_auth)) ) }}"
+  vars:
+    attribute: "fqdn"
+
+- name: Build keyed maps (actual)
+  ansible.builtin.set_fact:
+    ka_netviews: "{{ dict( ((a_netviews.json.result | default([])) | map(attribute='name') | list) | zip(a_netviews.json.result | default([])) ) }}"
+    ka_dnsviews: "{{ dict( ((a_dnsviews.json.result | default([])) | map(attribute='name') | list) | zip(a_dnsviews.json.result | default([])) ) }}"
+    ka_vlans: "{{ dict( ((a_vlans.json.result | default([])) | map(attribute='name') | list) | zip(a_vlans.json.result | default([])) ) }}"
+    ka_netcont_v4: "{{ dict( ((a_netcont_v4.json.result | default([])) | map(attribute='network') | list) | zip(a_netcont_v4.json.result | default([])) ) }}"
+    ka_netcont_v6: "{{ dict( ((a_netcont_v6.json.result | default([])) | map(attribute='network') | list) | zip(a_netcont_v6.json.result | default([])) ) }}"
+    ka_zones: >-
+      {{
+        dict( ((a_zones.json.result | default([])) |
+               map('extract', attribute='fqdn') | list) |
+               zip(a_zones.json.result | default([])) )
+      }}
+
+# Small helper to compare limited fields (as strings to make CSV easy)
+- name: Build comparison helpers
+  ansible.builtin.set_fact:
+    _cmp: >-
+      {{
+        {
+          'network_view': _cmp_fields.network_view,
+          'dns_view': _cmp_fields.dns_view,
+          'vlan': _cmp_fields.vlan,
+          'netcont_v4': _cmp_fields.netcont_v4,
+          'netcont_v6': _cmp_fields.netcont_v6,
+          'zone_auth': _cmp_fields.zone_auth
+        }
+      }}
+
+# ---------------------------------------------------------------------
+# 4) DRIFT CALCULATION PER OBJECT TYPE
+# ---------------------------------------------------------------------
+- name: Calc drift – Network Views
+  ansible.builtin.set_fact:
+    drift_netviews:
+      missing: "{{ (kd_netviews.keys() | difference(ka_netviews.keys())) | list }}"
+      extra:   "{{ (ka_netviews.keys() | difference(kd_netviews.keys())) | list }}"
+      changed: >-
+        {%- set out = [] -%}
+        {%- for k in kd_netviews.keys() | intersect(ka_netviews.keys()) -%}
+          {%- set d = kd_netviews[k] -%}
+          {%- set a = ka_netviews[k] -%}
+          {%- set diffs = {} -%}
+          {%- for f in _cmp.network_view -%}
+            {%- set dv = d.get(f) -%}
+            {%- set av = a.get(f) -%}
+            {%- if (dv | tojson) != (av | tojson) -%}
+              {%- set _ = diffs.update({f: {'desired': dv, 'actual': av}}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- if diffs | length > 0 -%}
+            {%- set _ = out.append({'name': k, 'diffs': diffs}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ out }}
+
+- name: Calc drift – DNS Views
+  ansible.builtin.set_fact:
+    drift_dnsviews:
+      missing: "{{ (kd_dnsviews.keys() | difference(ka_dnsviews.keys())) | list }}"
+      extra:   "{{ (ka_dnsviews.keys() | difference(kd_dnsviews.keys())) | list }}"
+      changed: >-
+        {%- set out = [] -%}
+        {%- for k in kd_dnsviews.keys() | intersect(ka_dnsviews.keys()) -%}
+          {%- set d = kd_dnsviews[k] -%}
+          {%- set a = ka_dnsviews[k] -%}
+          {%- set diffs = {} -%}
+          {%- for f in _cmp.dns_view -%}
+            {%- set dv = d.get(f) -%}
+            {%- set av = a.get(f) -%}
+            {%- if (dv | tojson) != (av | tojson) -%}
+              {%- set _ = diffs.update({f: {'desired': dv, 'actual': av}}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- if diffs | length > 0 -%}
+            {%- set _ = out.append({'name': k, 'diffs': diffs}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ out }}
+
+- name: Calc drift – VLANs
+  ansible.builtin.set_fact:
+    drift_vlans:
+      missing: "{{ (kd_vlans.keys() | difference(ka_vlans.keys())) | list }}"
+      extra:   "{{ (ka_vlans.keys() | difference(kd_vlans.keys())) | list }}"
+      changed: >-
+        {%- set out = [] -%}
+        {%- for k in kd_vlans.keys() | intersect(ka_vlans.keys()) -%}
+          {%- set d = kd_vlans[k] -%}
+          {%- set a = ka_vlans[k] -%}
+          {%- set diffs = {} -%}
+          {%- for f in _cmp.vlan -%}
+            {%- set dv = d.get(f) -%}
+            {%- set av = a.get(f) -%}
+            {%- if (dv | tojson) != (av | tojson) -%}
+              {%- set _ = diffs.update({f: {'desired': dv, 'actual': av}}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- if diffs | length > 0 -%}
+            {%- set _ = out.append({'name': k, 'diffs': diffs}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ out }}
+
+- name: Calc drift – IPv4 Containers
+  ansible.builtin.set_fact:
+    drift_netcont_v4:
+      missing: "{{ (kd_netcont_v4.keys() | difference(ka_netcont_v4.keys())) | list }}"
+      extra:   "{{ (ka_netcont_v4.keys() | difference(kd_netcont_v4.keys())) | list }}"
+      changed: >-
+        {%- set out = [] -%}
+        {%- for k in kd_netcont_v4.keys() | intersect(ka_netcont_v4.keys()) -%}
+          {%- set d = kd_netcont_v4[k] -%}
+          {%- set a = ka_netcont_v4[k] -%}
+          {%- set diffs = {} -%}
+          {%- for f in _cmp.netcont_v4 -%}
+            {%- set dv = d.get(f) -%}
+            {%- set av = a.get(f) -%}
+            {%- if (dv | tojson) != (av | tojson) -%}
+              {%- set _ = diffs.update({f: {'desired': dv, 'actual': av}}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- if diffs | length > 0 -%}
+            {%- set _ = out.append({'cidr': k, 'diffs': diffs}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ out }}
+
+- name: Calc drift – IPv6 Containers
+  ansible.builtin.set_fact:
+    drift_netcont_v6:
+      missing: "{{ (kd_netcont_v6.keys() | difference(ka_netcont_v6.keys())) | list }}"
+      extra:   "{{ (ka_netcont_v6.keys() | difference(kd_netcont_v6.keys())) | list }}"
+      changed: >-
+        {%- set out = [] -%}
+        {%- for k in kd_netcont_v6.keys() | intersect(ka_netcont_v6.keys()) -%}
+          {%- set d = kd_netcont_v6[k] -%}
+          {%- set a = ka_netcont_v6[k] -%}
+          {%- set diffs = {} -%}
+          {%- for f in _cmp.netcont_v6 -%}
+            {%- set dv = d.get(f) -%}
+            {%- set av = a.get(f) -%}
+            {%- if (dv | tojson) != (av | tojson) -%}
+              {%- set _ = diffs.update({f: {'desired': dv, 'actual': av}}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- if diffs | length > 0 -%}
+            {%- set _ = out.append({'cidr': k, 'diffs': diffs}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ out }}
+
+- name: Calc drift – Authoritative Zones
+  ansible.builtin.set_fact:
+    drift_zones:
+      missing: "{{ (kd_zones.keys() | difference(ka_zones.keys())) | list }}"
+      extra:   "{{ (ka_zones.keys() | difference(kd_zones.keys())) | list }}"
+      changed: >-
+        {%- set out = [] -%}
+        {%- for k in kd_zones.keys() | intersect(ka_zones.keys()) -%}
+          {%- set d = kd_zones[k] -%}
+          {%- set a = ka_zones[k] -%}
+          {%- set diffs = {} -%}
+          {%- for f in _cmp.zone_auth -%}
+            {%- set dv = d.get(f) -%}
+            {%- set av = a.get(f) -%}
+            {%- if (dv | tojson) != (av | tojson) -%}
+              {%- set _ = diffs.update({f: {'desired': dv, 'actual': av}}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- if diffs | length > 0 -%}
+            {%- set _ = out.append({'fqdn': k, 'diffs': diffs}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ out }}
+
+# ---------------------------------------------------------------------
+# 5) EXPORT JSON + CSV
+# ---------------------------------------------------------------------
+- name: Save JSON report (all drift)
+  ansible.builtin.copy:
+    dest: "{{ report_dir }}/infoblox_audit_drift.json"
+    mode: "0644"
+    content: >-
+      {{
+        {
+          "network_views": drift_netviews,
+          "dns_views": drift_dnsviews,
+          "vlans": drift_vlans,
+          "network_containers_v4": drift_netcont_v4,
+          "network_containers_v6": drift_netcont_v6,
+          "zones_auth": drift_zones
+        } | to_nice_json
+      }}
+
+# CSVs: missing/extra/changed for each type (compact; easy to ingest)
+- name: Write CSV – Network Views
+  ansible.builtin.copy:
+    dest: "{{ report_dir }}/network_views_drift.csv"
+    mode: "0644"
+    content: |-
+      type,key,field,desired,actual
+      {% for n in drift_netviews.missing %}missing,{{ n }},,,{% endfor %}
+      {% for n in drift_netviews.extra %}extra,{{ n }},,,{% endfor %}
+      {% for c in drift_netviews.changed %}
+      {% for f,d in c.diffs.items() %}changed,{{ c.name }},{{ f }},{{ (d.desired | tojson) }},{{ (d.actual | tojson) }}{% endfor %}
+      {% endfor %}
+
+- name: Write CSV – DNS Views
+  ansible.builtin.copy:
+    dest: "{{ report_dir }}/dns_views_drift.csv"
+    mode: "0644"
+    content: |-
+      type,key,field,desired,actual
+      {% for n in drift_dnsviews.missing %}missing,{{ n }},,,{% endfor %}
+      {% for n in drift_dnsviews.extra %}extra,{{ n }},,,{% endfor %}
+      {% for c in drift_dnsviews.changed %}
+      {% for f,d in c.diffs.items() %}changed,{{ c.name }},{{ f }},{{ (d.desired | tojson) }},{{ (d.actual | tojson) }}{% endfor %}
+      {% endfor %}
+
+- name: Write CSV – VLANs
+  ansible.builtin.copy:
+    dest: "{{ report_dir }}/vlans_drift.csv"
+    mode: "0644"
+    content: |-
+      type,key,field,desired,actual
+      {% for n in drift_vlans.missing %}missing,{{ n }},,,{% endfor %}
+      {% for n in drift_vlans.extra %}extra,{{ n }},,,{% endfor %}
+      {% for c in drift_vlans.changed %}
+      {% for f,d in c.diffs.items() %}changed,{{ c.name }},{{ f }},{{ (d.desired | tojson) }},{{ (d.actual | tojson) }}{% endfor %}
+      {% endfor %}
+
+- name: Write CSV – IPv4 Containers
+  ansible.builtin.copy:
+    dest: "{{ report_dir }}/network_containers_v4_drift.csv"
+    mode: "0644"
+    content: |-
+      type,key,field,desired,actual
+      {% for n in drift_netcont_v4.missing %}missing,{{ n }},,,{% endfor %}
+      {% for n in drift_netcont_v4.extra %}extra,{{ n }},,,{% endfor %}
+      {% for c in drift_netcont_v4.changed %}
+      {% for f,d in c.diffs.items() %}changed,{{ c.cidr }},{{ f }},{{ (d.desired | tojson) }},{{ (d.actual | tojson) }}{% endfor %}
+      {% endfor %}
+
+- name: Write CSV – IPv6 Containers
+  ansible.builtin.copy:
+    dest: "{{ report_dir }}/network_containers_v6_drift.csv"
+    mode: "0644"
+    content: |-
+      type,key,field,desired,actual
+      {% for n in drift_netcont_v6.missing %}missing,{{ n }},,,{% endfor %}
+      {% for n in drift_netcont_v6.extra %}extra,{{ n }},,,{% endfor %}
+      {% for c in drift_netcont_v6.changed %}
+      {% for f,d in c.diffs.items() %}changed,{{ c.cidr }},{{ f }},{{ (d.desired | tojson) }},{{ (d.actual | tojson) }}{% endfor %}
+      {% endfor %}
+
+- name: Write CSV – Zones (Authoritative)
+  ansible.builtin.copy:
+    dest: "{{ report_dir }}/zones_auth_drift.csv"
+    mode: "0644"
+    content: |-
+      type,key,field,desired,actual
+      {% for n in drift_zones.missing %}missing,{{ n }},,,{% endfor %}
+      {% for n in drift_zones.extra %}extra,{{ n }},,,{% endfor %}
+      {% for c in drift_zones.changed %}
+      {% for f,d in c.diffs.items() %}changed,{{ c.fqdn }},{{ f }},{{ (d.desired | tojson) }},{{ (d.actual | tojson) }}{% endfor %}
+      {% endfor %}
+
+- name: Done
+  ansible.builtin.debug:
+    msg:
+      - "Wrote JSON: {{ report_dir }}/infoblox_audit_drift.json"
+      - "Wrote CSVs: *_drift.csv under {{ report_dir }}"
