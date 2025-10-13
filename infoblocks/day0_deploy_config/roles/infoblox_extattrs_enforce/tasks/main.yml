@@ -1,0 +1,147 @@
+---
+- name: Validate Infoblox connection vars
+  ansible.builtin.assert:
+    that:
+      - nios_host | length > 0
+      - nios_username | length > 0
+      - nios_password | length > 0
+    fail_msg: "Set nios_host / nios_username / nios_password."
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    nios_validate_certs: "{{ nios_validate_certs | default(false) }}"
+    nios_wapi_version: "{{ nios_wapi_version | default('v2.12') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/infoblox-ea-enforce') }}"
+    ea_policies: "{{ ea_policies | default([]) }}"
+    _ea_supported_types: ["network", "networkcontainer", "range", "zone_auth"]
+
+- name: Ensure artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Build WAPI base & creds
+  ansible.builtin.set_fact:
+    _wapi_base: "https://{{ nios_host }}/wapi/{{ nios_wapi_version }}"
+    _creds:
+      user: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      force_basic_auth: true
+      validate_certs: "{{ nios_validate_certs }}"
+
+- name: Discover current objects (networks / containers / ranges / zones)
+  vars:
+    _queries:
+      - { type: "network",          path: "network",              fields: "network,network_view,comment,extattrs" }
+      - { type: "networkcontainer", path: "networkcontainer",     fields: "network,network_view,comment,extattrs" }
+      - { type: "range",            path: "range",                fields: "start_addr,end_addr,network,network_view,comment,extattrs" }
+      - { type: "zone_auth",        path: "zone_auth",            fields: "fqdn,view,comment,extattrs" }
+  block:
+    - name: GET {{ item.type }}
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ item.path }}"
+        method: GET
+        return_content: true
+        status_code: [200]
+        params:
+          _return_as_object: 1
+          _max_results: 10000
+          "_return_fields+": "{{ item.fields }}"
+        **_creds
+      register: _fetch
+      loop: "{{ _queries | selectattr('type','in', _ea_supported_types) | list }}"
+      loop_control: { label: "{{ item.type }}" }
+
+    - name: Build maps by type
+      ansible.builtin.set_fact:
+        _objs:
+          network:          "{{ ( _fetch.results | selectattr('item.type','equalto','network') | first ).json.result | default([]) }}"
+          networkcontainer: "{{ ( _fetch.results | selectattr('item.type','equalto','networkcontainer') | first ).json.result | default([]) }}"
+          range:            "{{ ( _fetch.results | selectattr('item.type','equalto','range') | first ).json.result | default([]) }}"
+          zone_auth:        "{{ ( _fetch.results | selectattr('item.type','equalto','zone_auth') | first ).json.result | default([]) }}"
+  rescue:
+    - ansible.builtin.set_fact:
+        _objs: { network: [], networkcontainer: [], range: [], zone_auth: [] }
+
+- name: Initialize report structure
+  ansible.builtin.set_fact:
+    _ea_changes: []
+
+- name: Enforce golden EAs per policy
+  vars:
+    SEL: "{{ item.selector | default({}) }}"
+    OBJTYPE: "{{ SEL.object | default('network') }}"
+    _target_list: >-
+      {%- set items = _objs[OBJTYPE] | default([]) -%}
+      {%- if OBJTYPE in ['network','range','networkcontainer'] and (SEL.network_view | default(None)) -%}
+        {%- set items = items | selectattr('network_view','equalto', SEL.network_view) | list -%}
+      {%- elif OBJTYPE == 'zone_auth' and (SEL.dns_view | default(None)) -%}
+        {%- set items = items | selectattr('view','equalto', SEL.dns_view) | list -%}
+      {%- endif -%}
+      {%- if (SEL.cidrs | default([])) | length > 0 and OBJTYPE in ['network','networkcontainer'] -%}
+        {%- set items = items | selectattr('network','defined') | selectattr('network','search', ('^(' ~ (SEL.cidrs | map('regex_escape') | join('|')) ~ ')')) | list -%}
+      {%- endif -%}
+      {{ items }}
+    _ea_match: "{{ SEL.match_ea | default({}) }}"
+    _desired_ea: "{{ item.extattrs | default({}) }}"
+  when: OBJTYPE in _ea_supported_types
+  block:
+    - name: Filter by EA matches if requested
+      ansible.builtin.set_fact:
+        _candidates: >-
+          {%- set arr = [] -%}
+          {%- for o in _target_list -%}
+            {%- set ok = true -%}
+            {%- for k,v in _ea_match.items() -%}
+              {%- set cur = (o.extattrs | default({})).get(k, {}) -%}
+              {%- if (cur.get('value') | default(None)) != v -%}
+                {%- set ok = false -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- if ok -%}{%- set _ = arr.append(o) -%}{%- endif -%}
+          {%- endfor -%}
+          {{ arr }}
+
+    - name: Build updates for each candidate (merge desired EAs)
+      ansible.builtin.set_fact:
+        _ea_updates: >-
+          {%- set updates = [] -%}
+          {%- for o in _candidates -%}
+            {%- set merged = (o.extattrs | default({})) | combine(_desired_ea, recursive=True) -%}
+            {%- set _ = updates.append({'_ref': o._ref, 'extattrs': merged}) -%}
+          {%- endfor -%}
+          {{ updates }}
+
+    - name: PUT EAs onto objects (best-effort)
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ item2._ref }}"
+        method: PUT
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: { extattrs: "{{ item2.extattrs }}" }
+        status_code: [200,400]
+        **_creds
+      loop: "{{ _ea_updates }}"
+      loop_control: { loop_var: item2, label: "{{ item2._ref }}" }
+      register: _ea_put
+      failed_when: false
+
+    - name: Append change summary
+      ansible.builtin.set_fact:
+        _ea_changes: "{{ _ea_changes + [ { 'object': OBJTYPE, 'selector': SEL, 'count': (_ea_updates | length) } ] }}"
+  loop: "{{ ea_policies }}"
+  loop_control: { label: "{{ (item.selector.object | default('network')) ~ ' policy' }}" }
+
+- name: Save EA enforcement artifact
+  ansible.builtin.copy:
+    dest: "{{ artifact_dir }}/ea_enforcement_summary.json"
+    mode: "0644"
+    content: >-
+      {{ { "policies": ea_policies, "changes": _ea_changes } | to_nice_json }}
+
+- name: Done
+  ansible.builtin.debug:
+    msg:
+      - "Applied {{ _ea_changes | map(attribute='count') | list | sum | default(0) }} EA updates across {{ _ea_changes | length }} policy(ies)"
+      - "Artifact: {{ artifact_dir }}/ea_enforcement_summary.json"

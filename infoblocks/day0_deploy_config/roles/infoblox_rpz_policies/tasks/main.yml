@@ -1,0 +1,184 @@
+---
+- name: Validate Infoblox connection vars
+  ansible.builtin.assert:
+    that:
+      - nios_host | length > 0
+      - nios_username | length > 0
+      - nios_password | length > 0
+    fail_msg: "Set nios_host / nios_username / nios_password."
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    nios_validate_certs: "{{ nios_validate_certs | default(false) }}"
+    nios_wapi_version: "{{ nios_wapi_version | default('v2.12') }}"
+    rpz_dns_view: "{{ rpz_dns_view | default('default') }}"
+    rpz_zones: "{{ rpz_zones | default([]) }}"
+    rpz_enforcement_order: "{{ rpz_enforcement_order | default([]) }}"
+    rpz_sync: "{{ rpz_sync | default(false) }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/infoblox-rpz') }}"
+
+- name: Ensure artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Build WAPI base & creds
+  ansible.builtin.set_fact:
+    _wapi_base: "https://{{ nios_host }}/wapi/{{ nios_wapi_version }}"
+    _creds:
+      user: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      force_basic_auth: true
+      validate_certs: "{{ nios_validate_certs }}"
+
+- name: Get DNS view ref for RPZ operations
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/dns_view"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      name: "{{ rpz_dns_view }}"
+      "_return_fields+": "name,_ref"
+    **_creds
+  register: rpz_view
+  failed_when: false
+
+- name: Set fact for view
+  ansible.builtin.set_fact:
+    _view_ref: "{{ (rpz_view.json.result|default([]))[0]._ref | default(omit) }}"
+
+- name: Get existing RPZ zones
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/zone_rpz"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      _max_results: 5000
+      "_return_fields+": "fqdn,primary_type,grid_primary,view,_ref,comment"
+    **_creds
+  register: rpz_z_get
+  failed_when: false
+
+- name: Map existing RPZ zones by name
+  ansible.builtin.set_fact:
+    _rpz_by_name: "{{ dict( ((rpz_z_get.json.result | default([])) | map(attribute='fqdn') | list) | zip(rpz_z_get.json.result | default([])) ) }}"
+
+- name: Ensure RPZ zones (create/update best-effort)
+  vars:
+    _name: "{{ item.name }}"
+    _payload:
+      fqdn: "{{ item.name }}"
+      view: "{{ rpz_dns_view }}"
+      primary_type: "{{ item.primary_type | default('primary') }}"
+      grid_primary: "{{ item.grid_primary | default(omit) }}"
+      comment: "{{ item.comment | default(omit) }}"
+  block:
+    - name: Create RPZ when missing
+      when: _rpz_by_name.get(_name) is not defined
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/zone_rpz"
+        method: POST
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: "{{ _payload }}"
+        status_code: [200,201,400]
+        **_creds
+      register: rpz_create
+      failed_when: false
+
+    - name: Update RPZ when present
+      when: _rpz_by_name.get(_name) is defined
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ _rpz_by_name[_name]._ref }}"
+        method: PUT
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: "{{ _payload }}"
+        status_code: [200,400]
+        **_creds
+      register: rpz_update
+      failed_when: false
+  loop: "{{ rpz_zones }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Refresh RPZ zones after changes
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/zone_rpz"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      _max_results: 5000
+      "_return_fields+": "fqdn,_ref,view"
+      view: "{{ rpz_dns_view }}"
+    **_creds
+  register: rpz_post
+  failed_when: false
+
+- name: Index updated zones
+  ansible.builtin.set_fact:
+    _rpz_by_name: "{{ dict( ((rpz_post.json.result | default([])) | map(attribute='fqdn') | list) | zip(rpz_post.json.result | default([])) ) }}"
+
+- name: Enforce RPZ enforcement order (best-effort, fields can vary)
+  when: (_view_ref is defined) and (rpz_enforcement_order | length > 0)
+  block:
+    - name: Try put 'rpz_policy_zones_order'
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ _view_ref }}"
+        method: PUT
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body:
+          rpz_policy_zones_order: "{{ rpz_enforcement_order | map('extract', _rpz_by_name) | map(attribute='_ref') | list | select('defined') | list }}"
+        status_code: [200,400]
+        **_creds
+      register: order_put1
+      failed_when: false
+
+    - name: Try put 'response_policy_zones_order' (alternate)
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ _view_ref }}"
+        method: PUT
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body:
+          response_policy_zones_order: "{{ rpz_enforcement_order | map('extract', _rpz_by_name) | map(attribute='_ref') | list | select('defined') | list }}"
+        status_code: [200,400]
+        **_creds
+      register: order_put2
+      failed_when: false
+
+- name: Optional: trigger RPZ refresh on zones (best-effort)
+  when: rpz_sync | bool
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/{{ (_rpz_by_name[item.name]._ref | default('zone_rpz:dummy')) }}?_function=refresh"
+    method: POST
+    headers: { Content-Type: "application/json" }
+    body_format: json
+    body: {}
+    status_code: [200,400,404]
+    **_creds
+  loop: "{{ rpz_zones }}"
+  loop_control: { label: "{{ item.name }}" }
+  register: rpz_refresh
+  failed_when: false
+
+- name: Artifact summary
+  ansible.builtin.copy:
+    dest: "{{ artifact_dir }}/rpz_summary.json"
+    mode: "0644"
+    content: >-
+      {{
+        {
+          "view": rpz_dns_view,
+          "zones": rpz_zones,
+          "order": rpz_enforcement_order,
+          "sync_requested": rpz_sync
+        } | to_nice_json
+      }}

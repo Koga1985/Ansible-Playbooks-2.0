@@ -1,0 +1,11 @@
+---
+nios_host: ""
+nios_username: ""
+nios_password: ""
+nios_validate_certs: false
+nios_wapi_version: "v2.12"
+rpz_dns_view: "default"
+rpz_zones: []
+rpz_enforcement_order: []
+rpz_sync: false
+artifact_dir: "/tmp/infoblox-rpz"

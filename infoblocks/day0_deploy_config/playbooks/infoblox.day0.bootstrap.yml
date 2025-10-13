@@ -1,0 +1,142 @@
+---
+- name: Infoblox Day-0 Bootstrap
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    nios_host: "{{ lookup('env','NIOS_HOST') | default('nios.example.local', true) }}"
+    nios_username: "{{ lookup('env','NIOS_USER') }}"
+    nios_password: "{{ lookup('env','NIOS_PASS') }}"
+    nios_validate_certs: false
+    nios_wapi_version: "v2.12"
+
+    grid_master_vip: "10.0.0.10"
+    grid_name: "PROD-GRID"
+    grid_members:
+      - { name: "ib-member-1", mgmt_ip: "10.0.0.11", vip: "10.0.0.111", ha_pair: false }
+      - { name: "ib-member-2", mgmt_ip: "10.0.0.12", vip: "10.0.0.112", ha_pair: false }
+
+    ntp_servers: ["0.pool.ntp.org", "1.pool.ntp.org"]
+    syslog_targets: ["10.0.0.50"]
+    smtp_relay: "smtp.example.com"
+    snmp_trap_receivers: ["10.0.0.51"]
+
+    id_sources: []
+
+    network_views: [ { name: "default", comment: "Default NV" } ]
+    dns_views: [ { name: "default", comment: "Default DNS view" } ]
+    network_containers_v4: [ { cidr: "10.0.0.0/8", comment: "Corp IPv4 supernet" } ]
+    network_containers_v6: []
+    zones_auth: [ { fqdn: "corp.example.com", view: "default", ns_group: "Grid Primary" } ]
+
+    ea_policies:
+      - selector: { object: "networkcontainer", network_view: "default", cidrs: ["10.0.0.0/8"] }
+        extattrs:
+          Environment: { value: "prod" }
+          Owner: { value: "NetOps" }
+          BusinessUnit: { value: "CorpIT" }
+
+    tsig_keys:
+      - { name: "axfr-internal", algorithm: "hmac-sha256", secret: "{{ lookup('env','TSIG_AXFR_SECRET') }}" }
+    named_acls:
+      - name: "ACL-Internal"
+        entries:
+          - { type: "network", value: "10.0.0.0/8" }
+          - { type: "network", value: "172.16.0.0/12" }
+          - { type: "network", value: "192.168.0.0/16" }
+    dns_view_policies:
+      - { view: "default", recursion_enabled: true, query_acl: "ACL-Internal", recursion_acl: "ACL-Internal" }
+
+    rpz_dns_view: "default"
+    rpz_zones:
+      - { name: "corp-threats.rpz", primary_type: "primary", grid_primary: "Grid Primary", comment: "Internal blocklist RPZ" }
+    rpz_enforcement_order: ["corp-threats.rpz"]
+    rpz_sync: false
+
+    dhcp_networks: []
+    dhcp_ranges: []
+    dhcp_failover_pairs: []
+
+    artifact_root: "/tmp/infoblox-day0"
+
+  pre_tasks:
+    - name: Ensure day-0 artifact folders
+      ansible.builtin.file:
+        path: "{{ artifact_root }}"
+        state: directory
+        mode: "0755"
+      tags: [always]
+
+  roles:
+    - { role: infoblox_grid_bootstrap, tags: ['10-bootstrap'],
+        vars: {
+          nios_host: nios_host, nios_username: nios_username, nios_password: nios_password,
+          nios_validate_certs: nios_validate_certs, nios_wapi_version: nios_wapi_version,
+          grid_name: grid_name, grid_master_vip: grid_master_vip, grid_members: grid_members,
+          ntp_servers: ntp_servers, syslog_targets: syslog_targets,
+          smtp_relay: smtp_relay, snmp_trap_receivers: snmp_trap_receivers,
+          artifact_dir: artifact_root ~ '/10-bootstrap'
+        }
+      }
+
+    - { role: dns_views_zones, tags: ['30-inventory'],
+        vars: {
+          nios_host: nios_host, nios_username: nios_username, nios_password: nios_password,
+          nios_validate_certs: nios_validate_certs, nios_wapi_version: nios_wapi_version,
+          network_views: network_views, dns_views: dns_views,
+          network_containers_v4: network_containers_v4, network_containers_v6: network_containers_v6,
+          zones_auth: zones_auth, artifact_dir: artifact_root ~ '/30-inventory'
+        }
+      }
+
+    - { role: infoblox_tsig_acls, tags: ['40-security'],
+        vars: {
+          nios_host: nios_host, nios_username: nios_username, nios_password: nios_password,
+          nios_validate_certs: nios_validate_certs, nios_wapi_version: nios_wapi_version,
+          tsig_keys: tsig_keys, named_acls: named_acls, dns_view_policies: dns_view_policies,
+          artifact_dir: artifact_root ~ '/40-security'
+        }
+      }
+
+    - { role: infoblox_rpz_policies, tags: ['45-rpz'],
+        vars: {
+          nios_host: nios_host, nios_username: nios_username, nios_password: nios_password,
+          nios_validate_certs: nios_validate_certs, nios_wapi_version: nios_wapi_version,
+          rpz_dns_view: rpz_dns_view, rpz_zones: rpz_zones, rpz_enforcement_order: rpz_enforcement_order,
+          rpz_sync: rpz_sync, artifact_dir: artifact_root ~ '/45-rpz'
+        }
+      }
+
+    - { role: infoblox_extattrs_enforce, tags: ['50-ea'],
+        vars: {
+          nios_host: nios_host, nios_username: nios_username, nios_password: nios_password,
+          nios_validate_certs: nios_validate_certs, nios_wapi_version: nios_wapi_version,
+          ea_policies: ea_policies, artifact_dir: artifact_root ~ '/50-ea'
+        }
+      }
+
+    - { role: infoblox_dhcp_scopes, tags: ['60-dhcp'],
+        vars: {
+          nios_host: nios_host, nios_username: nios_username, nios_password: nios_password,
+          nios_validate_certs: nios_validate_certs, nios_wapi_version: nios_wapi_version,
+          dhcp_networks: dhcp_networks, dhcp_ranges: dhcp_ranges,
+          artifact_dir: artifact_root ~ '/60-dhcp'
+        }
+      }
+    - { role: infoblox_dhcp_failover, tags: ['60-dhcp', '60-failover'],
+        vars: {
+          nios_host: nios_host, nios_username: nios_username, nios_password: nios_password,
+          nios_validate_certs: nios_validate_certs, nios_wapi_version: nios_wapi_version,
+          network_view: 'default', dhcp_failover_pairs: dhcp_failover_pairs,
+          artifact_dir: artifact_root ~ '/60-failover'
+        }
+      }
+
+    - { role: infoblox_audit_compliance, tags: ['90-audit'],
+        vars: {
+          nios_host: nios_host, nios_username: nios_username, nios_password: nios_password,
+          nios_validate_certs: nios_validate_certs, nios_wapi_version: nios_wapi_version,
+          desired_files: [], report_dir: artifact_root ~ '/90-audit'
+        }
+      }

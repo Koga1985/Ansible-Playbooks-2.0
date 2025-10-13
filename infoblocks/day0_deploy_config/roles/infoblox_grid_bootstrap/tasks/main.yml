@@ -1,0 +1,88 @@
+---
+- name: Validate vars
+  ansible.builtin.assert:
+    that:
+      - nios_host|length > 0
+      - nios_username|length > 0
+      - nios_password|length > 0
+
+- name: Setup base facts
+  ansible.builtin.set_fact:
+    _wapi_base: "https://{{ nios_host }}/wapi/{{ nios_wapi_version | default('v2.12') }}"
+    _creds:
+      user: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      force_basic_auth: true
+      validate_certs: "{{ nios_validate_certs | default(false) }}"
+
+- name: Configure NTP servers (Grid) - best-effort
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/grid?_function=set_ntp"
+    method: POST
+    headers: { Content-Type: "application/json" }
+    body_format: json
+    body: { ntp_servers: "{{ ntp_servers | default([]) }}" }
+    status_code: [200,400]
+    **_creds
+  register: ntp_set
+  failed_when: false
+
+- name: Configure syslog (Grid) - best-effort
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/grid?_function=set_syslog_servers"
+    method: POST
+    headers: { Content-Type: "application/json" }
+    body_format: json
+    body: { syslog_servers: "{{ syslog_targets | default([]) }}" }
+    status_code: [200,400]
+    **_creds
+  register: syslog_set
+  failed_when: false
+
+- name: Fetch Grid ref
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/grid"
+    method: GET
+    return_content: true
+    status_code: [200]
+    **_creds
+  register: grid_get
+
+- name: Update SMTP relay (best-effort)
+  when: smtp_relay is defined and smtp_relay|length > 0 and (grid_get.json._ref is defined)
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/{{ grid_get.json._ref }}"
+    method: PUT
+    headers: { Content-Type: "application/json" }
+    body_format: json
+    body: { smtp_server: "{{ smtp_relay }}" }
+    status_code: [200,400]
+    **_creds
+  failed_when: false
+
+- name: Configure SNMP traps (Grid) - best-effort
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/grid?_function=set_snmp_trap_receivers"
+    method: POST
+    headers: { Content-Type: "application/json" }
+    body_format: json
+    body: { trap_receivers: "{{ snmp_trap_receivers | default([]) }}" }
+    status_code: [200,400]
+    **_creds
+  register: snmp_set
+  failed_when: false
+
+- name: Artifact
+  ansible.builtin.copy:
+    dest: "{{ artifact_dir | default('/tmp/infoblox-grid-bootstrap') }}/grid_bootstrap_summary.json"
+    mode: "0644"
+    content: >-
+      {{
+        {
+          "ntp_servers": ntp_servers | default([]),
+          "syslog_targets": syslog_targets | default([]),
+          "smtp_relay": smtp_relay | default(''),
+          "snmp_trap_receivers": snmp_trap_receivers | default([]),
+          "notes": "Member join not automated here; configure via OVA/CLI and then manage with roles."
+        } | to_nice_json
+      }}

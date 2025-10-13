@@ -1,0 +1,10 @@
+---
+nios_host: ""
+nios_username: ""
+nios_password: ""
+nios_validate_certs: false
+nios_wapi_version: "v2.12"
+network_view: "default"
+artifact_dir: "/tmp/infoblox-dhcp-scopes"
+dhcp_networks: []
+dhcp_ranges: []

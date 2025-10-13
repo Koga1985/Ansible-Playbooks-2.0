@@ -1,0 +1,7 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Create DNS/Network views, containers, and base zones.
+  license: MIT
+  min_ansible_version: "2.15"
+  galaxy_tags: ["infoblox","nios"]
+dependencies: []

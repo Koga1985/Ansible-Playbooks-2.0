@@ -1,0 +1,7 @@
+galaxy_info:
+  author: Dewain Smith
+  description: Manage TSIG keys, Named ACLs, and recursion/query policies per DNS view.
+  license: MIT
+  min_ansible_version: "2.15"
+  galaxy_tags: ["infoblox","nios"]
+dependencies: []

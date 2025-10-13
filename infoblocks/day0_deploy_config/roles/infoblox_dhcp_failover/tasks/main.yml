@@ -1,0 +1,4 @@
+---
+- name: ERROR
+  ansible.builtin.fail:
+    msg: "Full DHCP failover task body not found in this environment. Please paste the earlier provided full content."

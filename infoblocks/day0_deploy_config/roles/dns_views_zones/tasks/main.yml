@@ -1,0 +1,56 @@
+---
+- name: Validate vars
+  ansible.builtin.assert:
+    that:
+      - nios_host|length > 0
+      - nios_username|length > 0
+      - nios_password|length > 0
+
+- name: Provider
+  ansible.builtin.set_fact:
+    nios_provider:
+      host: "{{ nios_host }}"
+      username: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      ssl_verify: "{{ nios_validate_certs | default(false) }}"
+      wapi_version: "{{ nios_wapi_version | default('v2.12') }}"
+
+- name: Ensure network views
+  infoblox.nios_modules.nios_network_view:
+    provider: "{{ nios_provider }}"
+    name: "{{ item.name }}"
+    comment: "{{ item.comment | default(omit) }}"
+    state: present
+  loop: "{{ network_views | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Ensure DNS views
+  infoblox.nios_modules.nios_dns_view:
+    provider: "{{ nios_provider }}"
+    name: "{{ item.name }}"
+    comment: "{{ item.comment | default(omit) }}"
+    state: present
+  loop: "{{ dns_views | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Ensure IPv4 network containers
+  infoblox.nios_modules.nios_network:
+    provider: "{{ nios_provider }}"
+    network: "{{ item.cidr }}"
+    network_view: "{{ item.network_view | default('default') }}"
+    comment: "{{ item.comment | default(omit) }}"
+    configure_for_dhcp: false
+    state: present
+  loop: "{{ network_containers_v4 | default([]) }}"
+  loop_control: { label: "{{ item.cidr }}" }
+
+- name: Ensure authoritative zones
+  infoblox.nios_modules.nios_zone:
+    provider: "{{ nios_provider }}"
+    fqdn: "{{ item.fqdn }}"
+    view: "{{ item.view | default('default') }}"
+    ns_group: "{{ item.ns_group | default(omit) }}"
+    comment: "{{ item.comment | default(omit) }}"
+    state: present
+  loop: "{{ zones_auth | default([]) }}"
+  loop_control: { label: "{{ item.fqdn }}" }

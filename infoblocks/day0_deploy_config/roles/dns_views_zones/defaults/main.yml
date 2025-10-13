@@ -1,0 +1,12 @@
+---
+nios_host: ""
+nios_username: ""
+nios_password: ""
+nios_validate_certs: false
+nios_wapi_version: "v2.12"
+network_views: []
+dns_views: []
+network_containers_v4: []
+network_containers_v6: []
+zones_auth: []
+artifact_dir: "/tmp/infoblox-inventory"
