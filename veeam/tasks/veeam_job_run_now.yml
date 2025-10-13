@@ -1,0 +1,43 @@
+---
+- name: Find job id
+  ansible.builtin.uri:
+    url: "{{ veeam_base_url }}/api/v1/jobs?name={{ job_name | urlencode }}"
+    method: GET
+    headers: { Authorization: "Bearer {{ veeam_token }}" }
+    status_code: [200]
+    return_content: true
+    validate_certs: "{{ veeam_verify_tls }}"
+  register: jobq
+
+- name: Start the job
+  ansible.builtin.uri:
+    url: "{{ veeam_base_url }}/api/v1/jobs/{{ (jobq.json.data|first).id }}/start"
+    method: POST
+    headers: { Authorization: "Bearer {{ veeam_token }}" }
+    status_code: [200,202]
+    validate_certs: "{{ veeam_verify_tls }}"
+  register: start
+
+- name: Poll for session status
+  vars:
+    timeout_sec: "{{ wait_timeout | default(3600) }}"
+    every_sec: "{{ poll_interval | default(15) }}"
+  until: state in ['Stopped','Success','Warning','Failed']
+  retries: "{{ (timeout_sec // every_sec) | int }}"
+  delay: "{{ every_sec }}"
+  ansible.builtin.uri:
+    url: "{{ veeam_base_url }}/api/v1/jobSessions?jobId={{ (jobq.json.data|first).id }}&limit=1"
+    method: GET
+    headers: { Authorization: "Bearer {{ veeam_token }}" }
+    status_code: [200]
+    return_content: true
+    validate_certs: "{{ veeam_verify_tls }}"
+  register: sess
+  changed_when: false
+  vars:
+    state: "{{ (sess.json.data | first).result | default('Running') }}"
+
+- name: Fail if not successful
+  when: state not in ['Success','Warning']
+  ansible.builtin.fail:
+    msg: "Job finished with {{ state }}"
