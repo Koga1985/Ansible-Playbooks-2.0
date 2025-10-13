@@ -1,0 +1,19 @@
+---
+- name: Get latest job sessions (24h)
+  ansible.builtin.uri:
+    url: "{{ veeam_base_url }}/api/v1/jobSessions?last24Hours=true&type=Backup"
+    method: GET
+    headers: { Authorization: "Bearer {{ veeam_token }}" }
+    status_code: [200]
+    return_content: true
+    validate_certs: "{{ veeam_verify_tls }}"
+  register: sessions
+
+- name: Write CSV
+  ansible.builtin.copy:
+    dest: "/tmp/veeam_sla_24h.csv"
+    content: |
+      job,sessionId,result,start,end
+      {% for s in sessions.json.data | default([]) %}
+      {{ s.jobName }},{{ s.id }},{{ s.result }},{{ s.creationTime }},{{ s.endTime | default('') }}
+      {% endfor %}
