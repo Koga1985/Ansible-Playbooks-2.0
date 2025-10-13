@@ -1,0 +1,30 @@
+---
+# Provide: source_object_id, snapshot_id, target_vm_name, dest_vcenter_id, dest_cluster_or_rp_id, dest_datastore_id, network_map (optional)
+- name: Full VM restore request
+  ansible.builtin.uri:
+    url: "{{ cohesity_url }}/v2/data-protect/restores/vmware/vm-restores"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cohesity_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "FullRestore {{ target_vm_name }}"
+      objects:
+        - sourceObjectId: "{{ source_object_id }}"
+          snapshotId: "{{ snapshot_id }}"
+          targetVmName: "{{ target_vm_name }}"
+          powerOn: false
+          relocateParams:
+            vCenterId: "{{ dest_vcenter_id }}"
+            resourceId: "{{ dest_cluster_or_rp_id }}"
+            datastoreId: "{{ dest_datastore_id }}"
+          networkConfig: >-
+            {{
+              (network_map | default([]) | length) > 0
+              | ternary({'networkType':'Custom','networks': network_map}, {'networkType':'Original'})
+            }}
+      postRestore:
+        powerOn: true
+    status_code: [200,202]
+    validate_certs: "{{ cohesity_verify_tls }}"
