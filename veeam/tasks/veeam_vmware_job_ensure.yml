@@ -1,0 +1,69 @@
+---
+- name: Get jobs
+  ansible.builtin.uri:
+    url: "{{ veeam_base_url }}/api/v1/jobs?type=Backup"
+    method: GET
+    headers: { Authorization: "Bearer {{ veeam_token }}" }
+    status_code: [200]
+    return_content: true
+    validate_certs: "{{ veeam_verify_tls }}"
+  register: jobs
+
+- name: Find vCenter id
+  ansible.builtin.uri:
+    url: "{{ veeam_base_url }}/api/v1/virtualizationServers?type=Vmware"
+    method: GET
+    headers: { Authorization: "Bearer {{ veeam_token }}" }
+    status_code: [200]
+    return_content: true
+    validate_certs: "{{ veeam_verify_tls }}"
+  register: vc
+
+- name: Compute payload
+  vars:
+    vc_id: "{{ (vc.json.data | selectattr('name','equalto', vcenter_name) | list | first).id }}"
+  ansible.builtin.set_fact:
+    veeam_job_payload:
+      name: "{{ job_name }}"
+      description: "Ansible-managed VMware job"
+      isDisabled: false
+      type: "Backup"
+      platform: "Vmware"
+      storage:
+        repositoryId: "{{ repository_id }}"
+        retentionPolicy: { type: "ByNumber", restorePoints: "{{ restore_points | default(30) }}" }
+        enableInlineDataDedup: true
+        compressionLevel: "Optimal"
+      schedule:
+        daily:
+          runEveryDay: true
+          localTime: "01:00:00"
+        retry: { enabled: true, retryCount: 3, waitInterval: "00:10:00" }
+      virtualMachines:
+        mode: "vSphereTags"            # or "Items" for explicit list
+        include:
+          - serverObjectId: "{{ vc_id }}"
+            tagCategory: "{{ include_tag_category | default('Environment') }}"
+            tag: "{{ include_tag_value | default('Prod') }}"
+        exclude:
+          - serverObjectId: "{{ vc_id }}"
+            tagCategory: "{{ exclude_tag_category | default('Backup') }}"
+            tag: "{{ exclude_tag_value | default('NoBackup') }}"
+
+- name: Create or update job
+  vars:
+    existing: "{{ (jobs.json.data | default([])) | selectattr('name','equalto', job_name) | list | first }}"
+  ansible.builtin.uri:
+    url: >-
+      {{
+        veeam_base_url ~ '/api/v1/jobs' if (existing is not defined)
+        else veeam_base_url ~ '/api/v1/jobs/' ~ existing.id
+      }}
+    method: "{{ 'POST' if (existing is not defined) else 'PUT' }}"
+    headers:
+      Authorization: "Bearer {{ veeam_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body: "{{ veeam_job_payload }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ veeam_verify_tls }}"
