@@ -1,0 +1,31 @@
+---
+# Inputs you must provide:
+# restore_vm_name, source_object_id, snapshot_id, dest_vcenter_id, dest_datastore_id, dest_network_name
+
+- name: Launch Instant VM Restore
+  ansible.builtin.uri:
+    url: "{{ cohesity_url }}/v2/data-protect/restores/vmware/instant-recoveries"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cohesity_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "IR {{ restore_vm_name }}"
+      objects:
+        - sourceObjectId: "{{ source_object_id }}"
+          snapshotId: "{{ snapshot_id }}"
+          targetVmName: "{{ restore_vm_name }}"
+          powerOn: true
+          networkConfig:
+            networkType: "Custom"
+            networks:
+              - originalNetworkName: "*"
+                targetNetworkName: "{{ dest_network_name }}"
+          datastoreId: "{{ dest_datastore_id }}"
+          targetResource:
+            vCenterId: "{{ dest_vcenter_id }}"
+            folderPath: "Cohesity-Restores"
+            resourcePoolPath: "Cohesity-RP"
+    status_code: [200,202]
+    validate_certs: "{{ cohesity_verify_tls }}"
