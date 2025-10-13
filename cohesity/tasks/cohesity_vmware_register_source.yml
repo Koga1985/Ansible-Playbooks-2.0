@@ -1,0 +1,33 @@
+---
+- name: Get VMware sources (vCenter/ESXi)
+  ansible.builtin.uri:
+    url: "{{ cohesity_url }}/v2/data-protect/sources?environment=VMware"
+    method: GET
+    headers: { Authorization: "Bearer {{ cohesity_token }}" }
+    return_content: true
+    status_code: [200]
+    validate_certs: "{{ cohesity_verify_tls }}"
+  register: vm_src
+
+- name: Create or update vCenter source
+  vars:
+    existing: "{{ (vm_src.json | selectattr('name','equalto', vcenter_name) | list | first) | default({}) }}"
+  ansible.builtin.uri:
+    url: "{{ cohesity_url }}/v2/data-protect/sources"
+    method: "{{ 'POST' if (existing|length)==0 else 'PUT' }}"
+    headers:
+      Authorization: "Bearer {{ cohesity_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      id: "{{ existing.id | default(omit) }}"
+      environment: "VMware"
+      endpoint: "{{ vcenter_fqdn_or_ip }}"
+      name: "{{ vcenter_name }}"
+      credentials:
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+      enableAutoProtect: true           # lets tag/folder discovery work
+      appCredentialsToUse: "None"
+    status_code: [200,201]
+    validate_certs: "{{ cohesity_verify_tls }}"
