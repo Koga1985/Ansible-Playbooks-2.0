@@ -1,0 +1,19 @@
+---
+# job_name + action: "pause" or "resume"
+- name: Find job id
+  ansible.builtin.uri:
+    url: "{{ cohesity_url }}/v2/data-protect/protection-groups?environment=VMware&names={{ job_name | urlencode }}"
+    method: GET
+    headers: { Authorization: "Bearer {{ cohesity_token }}" }
+    return_content: true
+    status_code: [200]
+    validate_certs: "{{ cohesity_verify_tls }}"
+  register: job
+
+- name: Change pause state
+  ansible.builtin.uri:
+    url: "{{ cohesity_url }}/v2/data-protect/protection-groups/{{ (job.json|first).id }}/{{ 'pause' if action=='pause' else 'resume' }}"
+    method: POST
+    headers: { Authorization: "Bearer {{ cohesity_token }}" }
+    status_code: [200,204]
+    validate_certs: "{{ cohesity_verify_tls }}"
