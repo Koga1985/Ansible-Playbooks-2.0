@@ -1,0 +1,32 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: infoblox_rpz_policies
+      vars:
+        nios_host: "nios.example.local"
+        nios_username: "{{ lookup('env','NIOS_USER') }}"
+        nios_password: "{{ lookup('env','NIOS_PASS') }}"
+        nios_validate_certs: false
+        nios_wapi_version: "v2.12"
+        rpz_dns_view: "default"
+        rpz_zones:
+          - name: "corp-threats.rpz"
+            comment: "Internal RPZ for incident blocks"
+            primary_type: "primary"
+            grid_primary: "Grid Primary"
+          - name: "vendor-feed1.rpz"
+            primary_type: "secondary"
+            grid_secondaries: ["Member-1","Member-2"]
+          - name: "open-intel.rpz"
+            primary_type: "primary"
+            external_feeds:
+              - name: "OpenIntelDaily"
+                url: "https://feeds.example.com/openintel.rpz"
+                username: "feeduser"
+                password: "feedpass"
+                schedule: "daily"
+        rpz_enforcement_order: ["corp-threats.rpz","vendor-feed1.rpz","open-intel.rpz"]
+        rpz_sync: true
+        artifact_dir: "/tmp/infoblox-rpz"

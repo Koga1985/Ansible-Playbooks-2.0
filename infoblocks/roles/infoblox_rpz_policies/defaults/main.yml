@@ -1,0 +1,13 @@
+# Connection
+nios_host: ""
+nios_username: ""
+nios_password: ""
+nios_validate_certs: false
+nios_wapi_version: "v2.12"
+
+# RPZ management
+rpz_dns_view: "default"
+rpz_zones: []        # list of zone dicts; see README for schema
+rpz_enforcement_order: []  # ordered list of zone names for enforcement
+rpz_sync: false      # if true, trigger feed sync for zones that define external_feeds
+artifact_dir: "/tmp/infoblox-rpz"
