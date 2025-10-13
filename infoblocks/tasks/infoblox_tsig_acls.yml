@@ -1,0 +1,343 @@
+# tasks/infoblox_tsig_acls.yml
+---
+- name: Validate Infoblox connection vars
+  ansible.builtin.assert:
+    that:
+      - nios_host | length > 0
+      - nios_username | length > 0
+      - nios_password | length > 0
+    fail_msg: "Set nios_host / nios_username / nios_password."
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    nios_validate_certs: "{{ nios_validate_certs | default(false) }}"
+    nios_wapi_version: "{{ nios_wapi_version | default('v2.12') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/infoblox-tsig-acls') }}"
+    dns_view_policies: "{{ dns_view_policies | default([]) }}"   # see examples below
+    tsig_keys: "{{ tsig_keys | default([]) }}"
+    named_acls: "{{ named_acls | default([]) }}"
+
+- name: Ensure artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Build WAPI base & creds
+  ansible.builtin.set_fact:
+    _wapi_base: "https://{{ nios_host }}/wapi/{{ nios_wapi_version }}"
+    _creds:
+      user: "{{ nios_username }}"
+      password: "{{ nios_password }}"
+      force_basic_auth: true
+      validate_certs: "{{ nios_validate_certs }}"
+
+# ------------------------------------------------------------
+# 1) DISCOVERY
+# ------------------------------------------------------------
+- name: Get DNS views (for policy updates)
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/dns_view"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      _max_results: 5000
+      "_return_fields+": "name,_ref,recursion,match_clients,comment,extattrs,allow_query,query_acl,recursion_acl"
+    **_creds
+  register: views_get
+
+- name: Get existing TSIG keys (try tsigkey then tsig_key)
+  block:
+    - ansible.builtin.uri:
+        url: "{{ _wapi_base }}/tsigkey"
+        method: GET
+        return_content: true
+        status_code: [200]
+        params:
+          _return_as_object: 1
+          _max_results: 5000
+          "_return_fields+": "name,algorithm,secret,_ref,comment,extattrs"
+        **_creds
+      register: tsig_a
+      failed_when: false
+
+    - ansible.builtin.uri:
+        url: "{{ _wapi_base }}/tsig_key"
+        method: GET
+        return_content: true
+        status_code: [200]
+        params:
+          _return_as_object: 1
+          _max_results: 5000
+          "_return_fields+": "name,algorithm,secret,_ref,comment,extattrs"
+        **_creds
+      register: tsig_b
+      failed_when: false
+  rescue: []
+
+- name: Choose TSIG endpoint & map
+  ansible.builtin.set_fact:
+    _tsig_endpoint: >-
+      {% if (tsig_a.status | default(0)) == 200 %}tsigkey{% else %}tsig_key{% endif %}
+    _tsig_existing: >-
+      {% if (tsig_a.status | default(0)) == 200 %}{{ tsig_a.json.result | default([]) }}{% else %}{{ tsig_b.json.result | default([]) }}{% endif %}
+    _tsig_by_name: "{{ dict( ((_tsig_existing | default([])) | map(attribute='name') | list) | zip(_tsig_existing | default([])) ) }}"
+
+- name: Get existing Named ACLs
+  ansible.builtin.uri:
+    url: "{{ _wapi_base }}/namedacl"
+    method: GET
+    return_content: true
+    status_code: [200]
+    params:
+      _return_as_object: 1
+      _max_results: 5000
+      "_return_fields+": "name,acl,_ref,comment,extattrs"
+    **_creds
+  register: acls_get
+  failed_when: false
+
+- name: Map views and ACLs
+  ansible.builtin.set_fact:
+    _views_by_name: "{{ dict( ((views_get.json.result | default([])) | map(attribute='name') | list) | zip(views_get.json.result | default([])) ) }}"
+    _acl_by_name: "{{ dict( ((acls_get.json.result | default([])) | map(attribute='name') | list) | zip(acls_get.json.result | default([])) ) }}"
+
+# ------------------------------------------------------------
+# 2) ENSURE TSIG KEYS
+#    { name, algorithm, secret, comment, extattrs }
+# ------------------------------------------------------------
+- name: Ensure TSIG keys (create/update best-effort)
+  vars:
+    _name: "{{ item.name }}"
+    _payload:
+      name: "{{ item.name }}"
+      algorithm: "{{ item.algorithm | default('hmac-sha256') }}"
+      secret: "{{ item.secret }}"
+      comment: "{{ item.comment | default(omit) }}"
+      extattrs: "{{ item.extattrs | default(omit) }}"
+  block:
+    - name: Create TSIG key when missing
+      when: _tsig_by_name.get(_name) is not defined
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ _tsig_endpoint }}"
+        method: POST
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: "{{ _payload }}"
+        status_code: [200,201,400]
+        **_creds
+      register: tsig_create
+      failed_when: false
+
+    - name: Update TSIG key when present
+      when: _tsig_by_name.get(_name) is defined
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ _tsig_by_name[_name]._ref }}"
+        method: PUT
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: "{{ _payload }}"
+        status_code: [200,400]
+        **_creds
+      register: tsig_update
+      failed_when: false
+  loop: "{{ tsig_keys }}"
+  loop_control: { label: "{{ item.name }}" }
+
+# ------------------------------------------------------------
+# 3) ENSURE NAMED ACLs
+#    Schema:
+#      - name: ACL-Corp
+#        entries:
+#          - type: "network"  value: "10.0.0.0/8"
+#          - type: "ip"       value: "192.0.2.10"
+#          - type: "acl"      value: "Another-ACL"
+#          - type: "tsig"     value: "key-name"
+# ------------------------------------------------------------
+- name: Build ACL entry objects per item
+  ansible.builtin.set_fact:
+    _acl_entries: >-
+      {{
+        item.entries | default([]) | map('combine', {}) | list | map('community.general.dict_kv', 'dummy', 0) | list
+      }}
+  loop: "{{ named_acls }}"
+  register: _acl_dummy   # just to iterate and set facts per item (not used directly)
+  changed_when: false
+
+- name: Ensure Named ACLs (create/update best-effort)
+  vars:
+    _name: "{{ item.name }}"
+    _entries: >-
+      {# Convert simplified entries -> WAPI acl[] best-effort #}
+      {%- set out = [] -%}
+      {%- for e in item.entries | default([]) -%}
+        {%- if e.type in ['network','cidr'] -%}
+          {%- set _ = out.append({'network': e.value}) -%}
+        {%- elif e.type in ['ip','host'] -%}
+          {%- set _ = out.append({'address': e.value}) -%}
+        {%- elif e.type == 'acl' -%}
+          {%- set ref = (_acl_by_name.get(e.value) or {}) .get('_ref', e.value) -%}
+          {%- set _ = out.append({'acl': ref}) -%}
+        {%- elif e.type == 'tsig' -%}
+          {%- set tref = (_tsig_by_name.get(e.value) or {}) .get('_ref', e.value) -%}
+          {%- set _ = out.append({'tsig_key': tref}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+    _payload:
+      name: "{{ item.name }}"
+      comment: "{{ item.comment | default(omit) }}"
+      extattrs: "{{ item.extattrs | default(omit) }}"
+      acl: "{{ _entries if (_entries | length) > 0 else omit }}"
+  block:
+    - name: Create Named ACL when missing
+      when: _acl_by_name.get(_name) is not defined
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/namedacl"
+        method: POST
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: "{{ _payload }}"
+        status_code: [200,201,400]
+        **_creds
+      register: acl_create
+      failed_when: false
+
+    - name: Update Named ACL when present
+      when: _acl_by_name.get(_name) is defined
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ _acl_by_name[_name]._ref }}"
+        method: PUT
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: "{{ _payload }}"
+        status_code: [200,400]
+        **_creds
+      register: acl_update
+      failed_when: false
+  loop: "{{ named_acls }}"
+  loop_control: { label: "{{ item.name }}" }
+
+# ------------------------------------------------------------
+# 4) APPLY PER-VIEW POLICIES
+#    dns_view_policies items:
+#      - view: "default"
+#        recursion_enabled: true|false
+#        query_acl: "ACL-Corp"            # named ACL name (optional)
+#        recursion_acl: "ACL-Helpdesk"    # named ACL name (optional)
+#        match_clients: ["ACL-Corp","192.0.2.10","10.0.0.0/8"]  # optional mixed list
+# ------------------------------------------------------------
+- name: Apply DNS view policies (best-effort PUTs)
+  vars:
+    _v: "{{ _views_by_name.get(item.view) }}"
+    _query_acl_ref: "{{ (_acl_by_name.get(item.query_acl) or {}) .get('_ref', omit) }}"
+    _rec_acl_ref: "{{ (_acl_by_name.get(item.recursion_acl) or {}) .get('_ref', omit) }}"
+    _mc_list: >-
+      {# Build match_clients list from mix of ACL names / IPs/CIDRs #}
+      {%- set arr = [] -%}
+      {%- for x in (item.match_clients | default([])) -%}
+        {%- set a_ref = (_acl_by_name.get(x) or {}) .get('_ref') -%}
+        {%- if a_ref -%}
+          {%- set _ = arr.append({'acl': a_ref}) -%}
+        {%- elif '/' in x or ('.' in x) -%}
+          {%- set _ = arr.append({'network': x}) -%}
+        {%- else -%}
+          {%- set _ = arr.append({'address': x}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ arr }}
+  when: _v is defined
+  block:
+    - name: Set recursion boolean (if provided)
+      when: item.recursion_enabled is defined
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ _v._ref }}"
+        method: PUT
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: { recursion: "{{ item.recursion_enabled | bool }}" }
+        status_code: [200,400]
+        **_creds
+      register: put_recursion
+      failed_when: false
+
+    - name: Set query ACL (try allow_query then query_acl)
+      when: item.query_acl is defined
+      block:
+        - ansible.builtin.uri:
+            url: "{{ _wapi_base }}/{{ _v._ref }}"
+            method: PUT
+            headers: { Content-Type: "application/json" }
+            body_format: json
+            body: { allow_query: [ { "acl": "{{ _query_acl_ref }}" } ] }
+            status_code: [200,400]
+            **_creds
+          register: put_query1
+          failed_when: false
+
+        - ansible.builtin.uri:
+            url: "{{ _wapi_base }}/{{ _v._ref }}"
+            method: PUT
+            headers: { Content-Type: "application/json" }
+            body_format: json
+            body: { query_acl: "{{ _query_acl_ref }}" }
+            status_code: [200,400]
+            **_creds
+          register: put_query2
+          failed_when: false
+
+    - name: Set recursion ACL (try recursion_acl field)
+      when: item.recursion_acl is defined
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ _v._ref }}"
+        method: PUT
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: { recursion_acl: "{{ _rec_acl_ref }}" }
+        status_code: [200,400]
+        **_creds
+      register: put_recacl
+      failed_when: false
+
+    - name: Set match_clients (split-horizon clients)
+      when: (item.match_clients | default([])) | length > 0
+      ansible.builtin.uri:
+        url: "{{ _wapi_base }}/{{ _v._ref }}"
+        method: PUT
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body: { match_clients: "{{ _mc_list }}" }
+        status_code: [200,400]
+        **_creds
+      register: put_matchclients
+      failed_when: false
+  loop: "{{ dns_view_policies }}"
+  loop_control: { label: "{{ item.view }}" }
+
+# ------------------------------------------------------------
+# 5) ARTIFACT
+# ------------------------------------------------------------
+- name: Save summary artifact
+  ansible.builtin.copy:
+    dest: "{{ artifact_dir }}/tsig_acls_policies_summary.json"
+    mode: "0644"
+    content: >-
+      {{
+        {
+          "views_seen": (views_get.json.result | default([])) | map(attribute='name') | list,
+          "tsig_endpoint": _tsig_endpoint,
+          "tsig_keys_requested": (tsig_keys | map(attribute='name') | list),
+          "named_acls_requested": (named_acls | map(attribute='name') | list),
+          "dns_view_policies": dns_view_policies
+        } | to_nice_json
+      }}
+
+- name: Done
+  ansible.builtin.debug:
+    msg:
+      - "TSIG keys processed: {{ tsig_keys | length }}"
+      - "Named ACLs processed: {{ named_acls | length }}"
+      - "DNS view policies processed: {{ dns_view_policies | length }}"
+      - "Artifact: {{ artifact_dir }}/tsig_acls_policies_summary.json"
