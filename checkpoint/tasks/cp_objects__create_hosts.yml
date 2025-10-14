@@ -1,0 +1,30 @@
+---
+# Creates/updates Host objects with color + comment.
+# Vars expected:
+#   cp_hosts:
+#     - name: app01
+#       ip: 10.10.1.10
+#       color: blue           # optional
+#       comment: "App server" # optional
+#   publish_changes: true|false (optional, default false)
+
+- name: Validate host var schema
+  ansible.builtin.assert:
+    that:
+      - cp_hosts is iterable
+    quiet: true
+
+- name: Create / update hosts
+  check_point.mgmt.cp_mgmt_host:
+    state: present
+    name: "{{ item.name }}"
+    ip_address: "{{ item.ip }}"
+    color: "{{ item.color | default(omit) }}"
+    comments: "{{ item.comment | default(omit) }}"
+  loop: "{{ cp_hosts }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Publish (hosts)
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:
