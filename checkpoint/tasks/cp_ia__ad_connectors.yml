@@ -1,0 +1,30 @@
+---
+# Configure AD/LDAP identity providers & collectors (PDP/PEP).
+# Uses generic API for compatibility across releases.
+# Vars:
+#   ia_identity_sources:
+#     - name: "corp-ad"
+#       ad_domain: "corp.local"
+#       servers: ["dc1.corp.local","dc2.corp.local"]
+#       user: "CORP\\svc_ia"
+#       password: "{{ vault_ia_pwd }}"
+#       use_ssl: true
+#       fetch_interval_minutes: 5
+
+- name: Create/Update AD identity providers
+  check_point.mgmt.cp_mgmt_api_call:
+    command: "set-identity-awareness-settings"
+    parameters:
+      ad-integrations:
+        - name: "{{ item.name }}"
+          ad-domain: "{{ item.ad_domain }}"
+          servers: "{{ item.servers }}"
+          username: "{{ item.user }}"
+          password: "{{ item.password }}"
+          use-ssl: "{{ item.use_ssl | default(true) }}"
+          fetch-interval: "{{ item.fetch_interval_minutes | default(5) }}"
+  loop: "{{ ia_identity_sources | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Publish IA settings
+  check_point.mgmt.cp_mgmt_publish:
