@@ -1,0 +1,49 @@
+---
+# Create/Update L4 services (TCP/UDP).
+# Vars expected:
+#   cp_services_tcp:
+#     - name: http-8080
+#       port: 8080
+#       session_timeout: 3600   # optional (seconds)
+#       match_for_any: false    # optional
+#       color: blue
+#       comment: "HTTP-alt"
+#   cp_services_udp:
+#     - name: syslog-514
+#       port: 514
+#       session_timeout: 600
+#       color: yellow
+#       comment: "Syslog"
+#   publish_changes: true|false
+
+- name: Create/Update TCP services
+  when: (cp_services_tcp | default([])) | length > 0
+  check_point.mgmt.cp_mgmt_service_tcp:
+    state: present
+    name: "{{ item.name }}"
+    port: "{{ item.port }}"
+    session_timeout: "{{ item.session_timeout | default(omit) }}"
+    match_for_any: "{{ item.match_for_any | default(omit) }}"
+    color: "{{ item.color | default(omit) }}"
+    comments: "{{ item.comment | default(omit) }}"
+  loop: "{{ cp_services_tcp | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create/Update UDP services
+  when: (cp_services_udp | default([])) | length > 0
+  check_point.mgmt.cp_mgmt_service_udp:
+    state: present
+    name: "{{ item.name }}"
+    port: "{{ item.port }}"
+    session_timeout: "{{ item.session_timeout | default(omit) }}"
+    match_for_any: "{{ item.match_for_any | default(omit) }}"
+    color: "{{ item.color | default(omit) }}"
+    comments: "{{ item.comment | default(omit) }}"
+  loop: "{{ cp_services_udp | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Publish (L4 services)
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:
