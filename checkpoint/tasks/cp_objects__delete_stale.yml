@@ -1,0 +1,145 @@
+---
+# Safely delete objects NOT in your source-of-truth lists.
+# Guardrails:
+#   • Requires cp_allow_delete=true
+#   • Skips protected names
+# Vars expected (any subset):
+#   cp_hosts, cp_networks, cp_address_ranges, cp_groups, cp_services_tcp, cp_services_udp
+#   protected_names: ["Any","Internet","External"] (defaults below)
+#   cp_allow_delete: false (MUST be true to proceed)
+#   publish_changes: true|false
+
+- name: Guardrail — explicit opt-in required
+  ansible.builtin.assert:
+    that: [ cp_allow_delete | default(false) | bool ]
+    fail_msg: "Deletion blocked. Set cp_allow_delete: true to proceed."
+
+- name: Defaults for protection and artifacts
+  ansible.builtin.set_fact:
+    _protected: "{{ protected_names | default(['Any','Internet','External','LocalNetwork']) }}"
+
+# --- HOSTS ---
+- name: Get existing hosts
+  check_point.mgmt.cp_mgmt_show_objects:
+    type: host
+    limit: 500
+  register: _hosts_all
+
+- name: Compute stale hosts
+  ansible.builtin.set_fact:
+    _hosts_desired: "{{ (cp_hosts | default([])) | map(attribute='name') | list }}"
+    _hosts_stale: >-
+      {{ (_hosts_all.objects | map(attribute='name') | list)
+          | difference(_hosts_desired)
+          | difference(_protected) }}
+
+- name: Delete stale hosts
+  when: _hosts_stale | length > 0
+  check_point.mgmt.cp_mgmt_host:
+    state: absent
+    name: "{{ item }}"
+  loop: "{{ _hosts_stale }}"
+
+# --- NETWORKS ---
+- name: Get existing networks
+  check_point.mgmt.cp_mgmt_show_objects:
+    type: network
+    limit: 500
+  register: _nets_all
+
+- name: Compute stale networks
+  ansible.builtin.set_fact:
+    _nets_desired: "{{ (cp_networks | default([])) | map(attribute='name') | list }}"
+    _nets_stale: >-
+      {{ (_nets_all.objects | map(attribute='name') | list)
+          | difference(_nets_desired)
+          | difference(_protected) }}
+
+- name: Delete stale networks
+  when: _nets_stale | length > 0
+  check_point.mgmt.cp_mgmt_network:
+    state: absent
+    name: "{{ item }}"
+  loop: "{{ _nets_stale }}"
+
+# --- ADDRESS RANGES ---
+- name: Get address ranges
+  check_point.mgmt.cp_mgmt_show_objects:
+    type: address-range
+    limit: 500
+  register: _ranges_all
+
+- name: Compute stale ranges
+  ansible.builtin.set_fact:
+    _ranges_desired: "{{ (cp_address_ranges | default([])) | map(attribute='name') | list }}"
+    _ranges_stale: >-
+      {{ (_ranges_all.objects | map(attribute='name') | list)
+          | difference(_ranges_desired)
+          | difference(_protected) }}
+
+- name: Delete stale address ranges
+  when: _ranges_stale | length > 0
+  check_point.mgmt.cp_mgmt_address_range:
+    state: absent
+    name: "{{ item }}"
+  loop: "{{ _ranges_stale }}"
+
+# --- GROUPS ---
+- name: Get groups
+  check_point.mgmt.cp_mgmt_show_objects:
+    type: group
+    limit: 500
+  register: _groups_all
+
+- name: Compute stale groups
+  ansible.builtin.set_fact:
+    _groups_desired: "{{ (cp_groups | default([])) | map(attribute='name') | list }}"
+    _groups_stale: >-
+      {{ (_groups_all.objects | map(attribute='name') | list)
+          | difference(_groups_desired)
+          | difference(_protected) }}
+
+- name: Delete stale groups
+  when: _groups_stale | length > 0
+  check_point.mgmt.cp_mgmt_group:
+    state: absent
+    name: "{{ item }}"
+  loop: "{{ _groups_stale }}"
+
+# --- SERVICES TCP/UDP ---
+- name: Get TCP services
+  check_point.mgmt.cp_mgmt_show_objects:
+    type: service-tcp
+    limit: 500
+  register: _svc_tcp_all
+
+- name: Get UDP services
+  check_point.mgmt.cp_mgmt_show_objects:
+    type: service-udp
+    limit: 500
+  register: _svc_udp_all
+
+- name: Compute stale TCP/UDP
+  ansible.builtin.set_fact:
+    _svc_tcp_desired: "{{ (cp_services_tcp | default([])) | map(attribute='name') | list }}"
+    _svc_udp_desired: "{{ (cp_services_udp | default([])) | map(attribute='name') | list }}"
+    _svc_tcp_stale: "{{ (_svc_tcp_all.objects | map(attribute='name') | list) | difference(_svc_tcp_desired) | difference(_protected) }}"
+    _svc_udp_stale: "{{ (_svc_udp_all.objects | map(attribute='name') | list) | difference(_svc_udp_desired) | difference(_protected) }}"
+
+- name: Delete stale TCP services
+  when: _svc_tcp_stale | length > 0
+  check_point.mgmt.cp_mgmt_service_tcp:
+    state: absent
+    name: "{{ item }}"
+  loop: "{{ _svc_tcp_stale }}"
+
+- name: Delete stale UDP services
+  when: _svc_udp_stale | length > 0
+  check_point.mgmt.cp_mgmt_service_udp:
+    state: absent
+    name: "{{ item }}"
+  loop: "{{ _svc_udp_stale }}"
+
+- name: Publish deletions
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:
