@@ -1,0 +1,13 @@
+---
+# Role defaults
+publish_changes: false
+artifacts_dir: "/tmp/checkpoint-artifacts"
+
+# Expected input (examples)
+cp_hosts: []           # [{ name, ip, color?, comment? }]
+cp_networks: []        # [{ name, subnet, mask, color?, comment? }]
+cp_address_ranges: []  # [{ name, start, end, color?, comment? }]
+cp_groups: []          # [{ name, members: [...], color?, comment? }]
+
+# Behavior knobs
+replace_members: true  # if true, group membership becomes authoritative

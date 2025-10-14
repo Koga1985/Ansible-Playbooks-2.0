@@ -1,0 +1,20 @@
+---
+# Calls the three inventory tasks in sequence, then optionally publishes once.
+
+- name: Create/Update host objects
+  import_tasks: cp_objects__create_hosts.yml
+  tags: [inventory, hosts]
+
+- name: Create/Update networks and ranges
+  import_tasks: cp_objects__create_networks.yml
+  tags: [inventory, networks]
+
+- name: Create/Update groups & membership
+  import_tasks: cp_objects__group_membership.yml
+  tags: [inventory, groups]
+
+# Single publish at the end for efficiency (each subtask is also safe to publish on its own if you prefer)
+- name: Publish inventory changes (role-level)
+  when: publish_changes | bool
+  check_point.mgmt.cp_mgmt_publish:
+  tags: [inventory, publish]

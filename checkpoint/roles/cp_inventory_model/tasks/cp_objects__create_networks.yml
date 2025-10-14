@@ -1,0 +1,40 @@
+---
+# Creates/updates Network subnets and Address Ranges.
+# Vars:
+#   cp_networks:
+#     - { name: prod-net, subnet: 10.10.0.0, mask: 16, color: red, comment: "Prod /16" }
+#   cp_address_ranges:
+#     - { name: dr-range, start: 10.20.50.10, end: 10.20.50.200, color: yellow, comment: "DR range" }
+
+- name: Validate input lists
+  ansible.builtin.assert:
+    that:
+      - cp_networks is iterable or cp_networks is not defined
+      - cp_address_ranges is iterable or cp_address_ranges is not defined
+    quiet: true
+
+- name: Create / update Network subnets
+  when: (cp_networks | default([])) | length > 0
+  check_point.mgmt.cp_mgmt_network:
+    state: present
+    name: "{{ item.name }}"
+    subnet: "{{ item.subnet }}"
+    mask_length: "{{ item.mask }}"
+    color: "{{ item.color | default(omit) }}"
+    comments: "{{ item.comment | default(omit) }}"
+  loop: "{{ cp_networks | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create / update Address Ranges
+  when: (cp_address_ranges | default([])) | length > 0
+  check_point.mgmt.cp_mgmt_address_range:
+    state: present
+    name: "{{ item.name }}"
+    ip_address_first: "{{ item.start }}"
+    ip_address_last: "{{ item.end }}"
+    color: "{{ item.color | default(omit) }}"
+    comments: "{{ item.comment | default(omit) }}"
+  loop: "{{ cp_address_ranges | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"

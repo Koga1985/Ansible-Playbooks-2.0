@@ -1,0 +1,52 @@
+---
+# Creates Groups and assigns members (names of hosts/networks/ranges/group objects).
+# Vars:
+#   cp_groups:
+#     - name: web-servers
+#       members: [ "app01", "10.10.1.11", "prod-net" ]
+#       color: green
+#       comment: "Tier: Web"
+#   replace_members: true|false  (true = desired list is authoritative)
+
+- name: Validate group list
+  ansible.builtin.assert:
+    that: [ cp_groups is iterable ]
+    quiet: true
+
+- name: Create/Update groups (metadata only first)
+  check_point.mgmt.cp_mgmt_group:
+    state: present
+    name: "{{ item.name }}"
+    color: "{{ item.color | default(omit) }}"
+    comments: "{{ item.comment | default(omit) }}"
+  loop: "{{ cp_groups }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Fetch current group members
+  check_point.mgmt.cp_mgmt_show_group:
+    name: "{{ item.name }}"
+  register: _grp_show
+  loop: "{{ cp_groups }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Build current membership map
+  ansible.builtin.set_fact:
+    _grp_current_map: "{{ dict(_grp_show.results | map(attribute='item.name') | list
+                              | zip(_grp_show.results | map(attribute='object.members') | list)) }}"
+
+- name: Reconcile members
+  vars:
+    desired: "{{ item.members | default([]) }}"
+    current: "{{ _grp_current_map[item.name] | default([]) }}"
+    mode_replace: "{{ replace_members | default(true) | bool }}"
+    new_members: >-
+      {{ (mode_replace | ternary(desired, (current + desired) | unique)) }}
+  check_point.mgmt.cp_mgmt_group:
+    state: present
+    name: "{{ item.name }}"
+    members: "{{ new_members }}"
+  loop: "{{ cp_groups }}"
+  loop_control:
+    label: "{{ item.name }}"
