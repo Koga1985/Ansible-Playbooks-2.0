@@ -1,0 +1,65 @@
+---
+# Controlled removal by tag or by explicit list; with guardrails.
+# Vars:
+#   cp_layer: "Network"
+#   remove_by_tag: "retire-2025Q1"   # optional
+#   remove_by_names: ["Old Rule 1","Temp Allow"]  # optional
+#   cp_allow_rule_delete: false      # MUST be true
+#   dry_run: true|false              # if true, only report
+#   artifacts_dir: "/tmp/checkpoint-artifacts"
+
+- name: Guardrail — explicit opt-in required
+  ansible.builtin.assert:
+    that: [ cp_allow_rule_delete | default(false) | bool ]
+    fail_msg: "Rule deletion blocked. Set cp_allow_rule_delete: true to proceed."
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    _cp_layer: "{{ cp_layer | default('Network') }}"
+    _art_dir: "{{ artifacts_dir | default('/tmp/checkpoint-artifacts') }}"
+
+- name: Ensure artifact folder
+  ansible.builtin.file:
+    path: "{{ _art_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Fetch rulebase (full for selection)
+  check_point.mgmt.cp_mgmt_show_access_rulebase:
+    name: "{{ _cp_layer }}"
+    details_level: "standard"
+    use_object_dictionnary: false
+  register: _rb
+
+- name: Select rules to delete
+  ansible.builtin.set_fact:
+    _targets: >-
+      {% set out = [] %}
+      {% for r in _rb.access_rulebase | default([]) %}
+        {% set has_tag = (remove_by_tag is defined) and (r.get('tags',[]) | intersect([remove_by_tag])) %}
+        {% set name_match = (remove_by_names is defined) and (r.name in remove_by_names) %}
+        {% if has_tag or name_match %}{% set _ = out.append({'uid': r.uid, 'name': r.name, 'position': r.position}) %}{% endif %}
+      {% endfor %}
+      {{ out }}
+
+- name: Write preview CSV (targets)
+  ansible.builtin.copy:
+    dest: "{{ _art_dir }}/policy_rules_to_delete.csv"
+    mode: "0644"
+    content: |
+      name,uid,position
+      {% for r in _targets %}{{ r.name | replace(',',';') }},{{ r.uid }},{{ r.position }}
+      {% endfor %}
+
+- name: Stop here if dry_run
+  when: dry_run | default(true) | bool
+  ansible.builtin.debug:
+    msg: "Dry-run enabled; generated {{ _art_dir }}/policy_rules_to_delete.csv — no changes applied."
+
+- name: Delete selected rules (by UID)
+  when: not (dry_run | default(true) | bool)
+  check_point.mgmt.cp_mgmt_delete_access_rule:
+    layer: "{{ _cp_layer }}"
+    uid: "{{ item.uid }}"
+  loop: "{{ _targets }}"
+  loop_control: { label: "{{ item.name }}" }
