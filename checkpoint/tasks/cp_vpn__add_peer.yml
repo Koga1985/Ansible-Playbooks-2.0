@@ -1,0 +1,33 @@
+---
+# Create/Update interoperable (3rd-party) VPN peers.
+# Vars:
+#   vpn_peers:
+#     - name: "peer-branch1"
+#       ip_address: "203.0.113.10"
+#       auth_method: "shared-secret"   # or "certificate"
+#       psk: "{{ vault_branch1_psk }}" # required for shared-secret
+#       color: "blue"
+#       comments: "Branch 1"
+#   publish_changes: false
+
+- name: Validate input
+  ansible.builtin.assert:
+    that: [ vpn_peers is iterable ]
+    quiet: true
+
+- name: Create/Update interoperable devices
+  check_point.mgmt.cp_mgmt_interoperable_device:
+    state: present
+    name: "{{ item.name }}"
+    ip_address: "{{ item.ip_address }}"
+    color: "{{ item.color | default(omit) }}"
+    comments: "{{ item.comments | default(omit) }}"
+    authentication:
+      method: "{{ item.auth_method | default('shared-secret') }}"
+      shared_secret: "{{ (item.auth_method | default('shared-secret')) == 'shared-secret' | ternary(item.psk, omit) }}"
+  loop: "{{ vpn_peers }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Publish VPN peers
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:
