@@ -1,0 +1,24 @@
+---
+- name: Resolve layer
+  ansible.builtin.set_fact:
+    _layer: "{{ cp_layer | default('Network') }}"
+
+- name: Create/Update identity rules
+  check_point.mgmt.cp_mgmt_access_rule:
+    layer: "{{ _layer }}"
+    name: "{{ item.name }}"
+    position: "{{ item.position | default('top') }}"
+    source: "{{ item.source_roles }}"
+    destination: "{{ item.destination | default(['Any']) }}"
+    service: "{{ item.service | default(['Any']) }}"
+    action: "{{ item.action | default('Accept') }}"
+    track: "{{ item.track | default('Log') }}"
+    enabled: "{{ item.enabled | default(true) }}"
+    tags: "{{ item.tags | default(omit) }}"
+    state: present
+  loop: "{{ ia_rules | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Publish identity rules
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:

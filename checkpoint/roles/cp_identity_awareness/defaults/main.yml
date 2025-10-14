@@ -1,0 +1,9 @@
+---
+cp_layer: "Network"
+publish_changes: false
+artifacts_dir: "/tmp/checkpoint-artifacts"
+
+ia_gateways: []
+ia_identity_sources: []
+ia_access_roles: []
+ia_rules: []

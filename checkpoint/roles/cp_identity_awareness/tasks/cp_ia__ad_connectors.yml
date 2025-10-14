@@ -1,0 +1,19 @@
+---
+- name: Create/Update AD identity providers
+  check_point.mgmt.cp_mgmt_api_call:
+    command: "set-identity-awareness-settings"
+    parameters:
+      ad-integrations:
+        - name: "{{ item.name }}"
+          ad-domain: "{{ item.ad_domain }}"
+          servers: "{{ item.servers }}"
+          username: "{{ item.user }}"
+          password: "{{ item.password }}"
+          use-ssl: "{{ item.use_ssl | default(true) }}"
+          fetch-interval: "{{ item.fetch_interval_minutes | default(5) }}"
+  loop: "{{ ia_identity_sources | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Publish IA settings
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:

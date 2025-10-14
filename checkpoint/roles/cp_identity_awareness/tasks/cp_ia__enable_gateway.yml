@@ -1,0 +1,12 @@
+---
+- name: Enable IA on simple gateways
+  check_point.mgmt.cp_mgmt_simple_gateway:
+    name: "{{ item.name }}"
+    identity_aware: "{{ item.identity_aware | default(true) }}"
+    state: present
+  loop: "{{ ia_gateways | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Publish IA toggle
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:

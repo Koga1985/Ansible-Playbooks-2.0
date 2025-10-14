@@ -1,0 +1,16 @@
+---
+- name: Enable IA on gateways/cluster members
+  import_tasks: cp_ia__enable_gateway.yml
+  tags: [ia, gateways]
+
+- name: Configure AD/LDAP identity connectors
+  import_tasks: cp_ia__ad_connectors.yml
+  tags: [ia, connectors]
+
+- name: Create/Update Access Roles
+  import_tasks: cp_ia__access_roles.yml
+  tags: [ia, roles]
+
+- name: Create identity-based access rules
+  import_tasks: cp_ia__rules.yml
+  tags: [ia, rules]

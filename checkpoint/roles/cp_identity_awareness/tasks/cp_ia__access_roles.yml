@@ -1,0 +1,15 @@
+---
+- name: Create/Update access roles
+  check_point.mgmt.cp_mgmt_access_role:
+    state: present
+    name: "{{ item.name }}"
+    users: "{{ item.users | default(omit) }}"
+    machines: "{{ item.machines | default(omit) }}"
+    networks: "{{ item.networks | default(omit) }}"
+    comments: "{{ item.comments | default(omit) }}"
+  loop: "{{ ia_access_roles | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Publish access roles
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:
