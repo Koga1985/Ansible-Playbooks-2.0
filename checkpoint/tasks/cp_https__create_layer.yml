@@ -1,0 +1,14 @@
+---
+# Create/Update HTTPS Inspection layer (container for rules).
+# Vars:
+#   https_layer_name: "HTTPS_Inspection"
+#   publish_changes: false
+
+- name: Create/Update HTTPS inspection layer
+  check_point.mgmt.cp_mgmt_https_layer:
+    name: "{{ https_layer_name | default('HTTPS_Inspection') }}"
+    state: present
+
+- name: Publish HTTPS layer
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:
