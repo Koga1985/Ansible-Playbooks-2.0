@@ -1,0 +1,70 @@
+---
+# Detect potentially shadowed/broader rules (heuristic).
+# Vars:
+#   cp_layer: "Network"
+#   artifacts_dir: "/tmp/checkpoint-artifacts"
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    _cp_layer: "{{ cp_layer | default('Network') }}"
+    _art_dir: "{{ artifacts_dir | default('/tmp/checkpoint-artifacts') }}"
+
+- name: Ensure artifact folder
+  ansible.builtin.file:
+    path: "{{ _art_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Fetch rulebase (standard detail)
+  check_point.mgmt.cp_mgmt_show_access_rulebase:
+    name: "{{ _cp_layer }}"
+    details_level: "standard"
+    use_object_dictionnary: false
+  register: _rb
+
+- name: Normalize rules for comparison
+  ansible.builtin.set_fact:
+    _rules: >-
+      {%- set out = [] -%}
+      {%- for r in _rb.access_rulebase | default([]) -%}
+        {%- set _ = out.append({
+          'idx': loop.index0,
+          'name': r.get('name',''),
+          'uid': r.get('uid',''),
+          'position': r.get('position',''),
+          'enabled': r.get('enabled', true),
+          'action': r.get('action',''),
+          'src': (r.get('source',[]) | map(attribute='name') | list) | default([]),
+          'dst': (r.get('destination',[]) | map(attribute='name') | list) | default([]),
+          'svc': (r.get('service',[]) | map(attribute='name') | list) | default([]),
+        }) -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: Compute potential shadowed pairs (heuristic)
+  vars:
+    _pairs: >-
+      {%- set out = [] -%}
+      {%- for r in _rules -%}
+        {%- for e in _rules if e.idx < r.idx -%}
+          {%- set src_ok = ('Any' in e.src) or (e.src == r.src) -%}
+          {%- set dst_ok = ('Any' in e.dst) or (e.dst == r.dst) -%}
+          {%- set svc_ok = ('Any' in e.svc) or (e.svc == r.svc) -%}
+          {%- if src_ok and dst_ok and svc_ok and (e.action == r.action) and (r.enabled) -%}
+            {%- set _ = out.append({'earlier': e, 'later': r}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ out }}
+  ansible.builtin.set_fact:
+    _shadow_pairs: "{{ _pairs }}"
+
+- name: Write shadowing CSV (heuristic)
+  ansible.builtin.copy:
+    dest: "{{ _art_dir }}/policy_shadowing_{{ _cp_layer | lower }}.csv"
+    mode: "0644"
+    content: |
+      earlier_name,earlier_uid,earlier_pos,later_name,later_uid,later_pos,action
+      {% for p in _shadow_pairs %}
+      {{ p.earlier.name | replace(',',';') }},{{ p.earlier.uid }},{{ p.earlier.position }},{{ p.later.name | replace(',',';') }},{{ p.later.uid }},{{ p.later.position }},{{ p.later.action }}
+      {% endfor %}

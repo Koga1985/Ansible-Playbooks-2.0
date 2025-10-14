@@ -1,0 +1,39 @@
+---
+# Export zero/low-hit rules to CSV for a given layer.
+# Vars:
+#   cp_layer: "Network"
+#   hit_threshold: 0            # 0 = zero-hit; 10 = low-hit, etc.
+#   artifacts_dir: "/tmp/checkpoint-artifacts"
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    _cp_layer: "{{ cp_layer | default('Network') }}"
+    _thresh: "{{ hit_threshold | default(0) | int }}"
+    _art_dir: "{{ artifacts_dir | default('/tmp/checkpoint-artifacts') }}"
+
+- name: Ensure artifact folder
+  ansible.builtin.file:
+    path: "{{ _art_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Fetch rulebase with hits
+  check_point.mgmt.cp_mgmt_show_access_rulebase:
+    name: "{{ _cp_layer }}"
+    details_level: "standard"
+    use_object_dictionnary: false
+    show_hits: true
+  register: _rb
+
+- name: Build CSV of rules with hits <= threshold
+  ansible.builtin.copy:
+    dest: "{{ _art_dir }}/policy_hitcount_{{ _cp_layer | lower }}.csv"
+    mode: "0644"
+    content: |
+      name,uid,position,hits,last_hit,enabled,action
+      {% for r in _rb.access_rulebase | default([]) %}
+      {% set hits = r.get('hits',{}).get('value',0) %}
+      {% if hits | int <= _thresh %}
+      {{ r.name | replace(',',';') }},{{ r.uid }},{{ r.position }},{{ hits }},{{ r.get('hits',{}).get('last-date','') }},{{ r.enabled }},{{ r.action }}
+      {% endif %}
+      {% endfor %}

@@ -1,0 +1,4 @@
+---
+# Publish the current session. Safe to run anytime.
+- name: Publish management session
+  check_point.mgmt.cp_mgmt_publish:

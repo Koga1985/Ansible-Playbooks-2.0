@@ -1,0 +1,41 @@
+---
+# Install policy package to targets. Supports serial/parallel batches.
+# Vars:
+#   policy_package: "Standard"
+#   install_targets: ["gw1","gw2","gw3"]
+#   parallel_batches: 2         # install N gateways at a time (default 1 = serial)
+#   access: true|false          # install Network layer (default: true)
+#   threat_prevention: true|false   # install TP layer (default: true)
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    _pkg: "{{ policy_package | default('Standard') }}"
+    _targets: "{{ install_targets | default([]) }}"
+    _batch: "{{ parallel_batches | default(1) | int }}"
+    _access: "{{ access | default(true) | bool }}"
+    _tp: "{{ threat_prevention | default(true) | bool }}"
+
+- name: Fail if no targets
+  ansible.builtin.assert:
+    that: [ _targets | length > 0 ]
+    fail_msg: "No install_targets provided."
+
+- name: Compute batches
+  ansible.builtin.set_fact:
+    _target_batches: >-
+      {% set out = [] %}
+      {% for i in range(0, (_targets | length), _batch) %}
+      {% set _ = out.append(_targets[i:(i+_batch)]) %}
+      {% endfor %}
+      {{ out }}
+
+- name: Install policy (batch loop)
+  check_point.mgmt.cp_mgmt_install_policy:
+    policy_package: "{{ _pkg }}"
+    targets: "{{ item }}"
+    access: "{{ _access }}"
+    threat_prevention: "{{ _tp }}"
+    install_on_all_cluster_members_or_fail: true
+    evaluate_policy: true
+  loop: "{{ _target_batches }}"
+  loop_control: { label: "{{ item | join(',') }}" }

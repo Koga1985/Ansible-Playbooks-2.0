@@ -1,0 +1,34 @@
+---
+# Access policy lifecycle tasks; import individually via tags as needed.
+
+- name: Create section scaffolding
+  import_tasks: cp_policy__create_sections.yml
+  tags: [policy, sections]
+
+- name: Apply rules (create/replace blocks)
+  import_tasks: cp_policy__apply_rules.yml
+  tags: [policy, rules]
+
+- name: Tag rules (owner/app/ticket)
+  import_tasks: cp_policy__tag_rules.yml
+  tags: [policy, rules, tags]
+
+- name: Remove rules (controlled, guardrails)
+  import_tasks: cp_policy__remove_rules.yml
+  tags: [policy, rules, remove]
+
+- name: Publish session
+  import_tasks: cp_policy__publish.yml
+  tags: [policy, publish]
+
+- name: Install policy package
+  import_tasks: cp_policy__install.yml
+  tags: [policy, install]
+
+- name: Hitcount report (zero/low-hit)
+  import_tasks: cp_policy__hitcount_report.yml
+  tags: [policy, report, hitcount]
+
+- name: Shadowing report (heuristic)
+  import_tasks: cp_policy__shadowing_report.yml
+  tags: [policy, report, shadowing]

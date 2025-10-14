@@ -1,0 +1,25 @@
+---
+# Create section scaffolding in a layer (e.g., by env/app tiers).
+# Vars:
+#   cp_layer: "Network"                 # default via role defaults
+#   cp_access_sections:
+#     - { name: "00-Global", position: "top" }
+#     - { name: "10-Prod-Web", position: "below 00-Global" }
+#   publish_changes: true|false
+
+- name: Resolve layer
+  ansible.builtin.set_fact:
+    _cp_layer: "{{ cp_layer | default('Network') }}"
+
+- name: Create/Update access sections
+  check_point.mgmt.cp_mgmt_access_section:
+    layer: "{{ _cp_layer }}"
+    name: "{{ item.name }}"
+    position: "{{ item.position | default('top') }}"
+    state: present
+  loop: "{{ cp_access_sections | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Publish section changes
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:

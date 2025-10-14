@@ -1,0 +1,12 @@
+---
+# Role defaults
+cp_layer: "Network"
+policy_package: "Standard"
+install_targets: []
+artifacts_dir: "/tmp/checkpoint-artifacts"
+
+# Optional knobs
+publish_changes: false           # some tasks have their own publish; role can call publish explicitly too
+parallel_batches: 1              # for installs
+managed_tag: "ansible-managed"   # used by apply_rules (optional)
+hit_threshold: 0                 # for hitcount report (0 = zero-hit)

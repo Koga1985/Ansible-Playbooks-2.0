@@ -1,0 +1,49 @@
+---
+# Add or update rule tags (owner/app/ticket/etc.). Select by name, UID, or filter query.
+# Vars:
+#   cp_layer: "Network"
+#   tag_set: ["owner:netops","ticket:CHG1234"]
+#   rule_names: [...] | rule_uids: [...] | filter_query: "string"
+
+- name: Resolve layer
+  ansible.builtin.set_fact:
+    _cp_layer: "{{ cp_layer | default('Network') }}"
+    _tag_set: "{{ tag_set | default([]) }}"
+
+- name: Select rules by filter (if provided)
+  when: filter_query is defined
+  check_point.mgmt.cp_mgmt_show_access_rulebase:
+    name: "{{ _cp_layer }}"
+    details_level: "standard"
+    use_object_dictionnary: false
+    filter: "{{ filter_query }}"
+  register: _flt
+
+- name: Select rules by name (if provided)
+  when: rule_names is defined
+  check_point.mgmt.cp_mgmt_show_access_rulebase:
+    name: "{{ _cp_layer }}"
+    details_level: "standard"
+    use_object_dictionnary: false
+  register: _all
+
+- name: Build target UID list
+  ansible.builtin.set_fact:
+    _uids_from_filter: "{{ (_flt.access_rulebase | default([])) | map(attribute='uid') | list }}"
+    _uids_from_names: >-
+      {% set out = [] %}
+      {% for r in (_all.access_rulebase | default([])) %}
+        {% if r.name in (rule_names | default([])) %}{% set _ = out.append(r.uid) %}{% endif %}
+      {% endfor %}
+      {{ out }}
+    _uids_final: >-
+      {{ ((rule_uids | default([])) + (_uids_from_filter | default([])) + (_uids_from_names | default([]))) | unique }}
+
+- name: Update tags on selected rules
+  when: (_uids_final | length) > 0
+  check_point.mgmt.cp_mgmt_set_access_rule:
+    layer: "{{ _cp_layer }}"
+    uid: "{{ item }}"
+    tags: "{{ _tag_set }}"
+  loop: "{{ _uids_final }}"
+  loop_control: { label: "{{ item }}" }
