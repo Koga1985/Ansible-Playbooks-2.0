@@ -1,0 +1,58 @@
+---
+# Create (or replace) rule blocks from YAML.
+# Optional cleanup by a "managed tag" before creating new rules.
+# Vars:
+#   cp_layer: "Network"
+#   managed_tag: "ansible-managed"     # if set, pre-delete existing rules with this tag
+#   cp_access_rules:
+#     - name: "Allow Web to App"
+#       position: "below 10-Prod-Web"
+#       source: ["web-servers"]
+#       destination: ["app-servers"]
+#       service: ["http","https"]
+#       action: "Accept"
+#       track: "Log"
+#       enabled: true
+#       time: "Any"
+#       install_on: ["Policy Targets"]
+#       tags: ["ansible-managed","owner:netops","app:payments"]
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    _cp_layer: "{{ cp_layer | default('Network') }}"
+    _managed_tag: "{{ managed_tag | default(omit) }}"
+
+- name: (Optional) fetch existing rules with managed tag
+  when: _managed_tag is defined
+  check_point.mgmt.cp_mgmt_show_access_rulebase:
+    name: "{{ _cp_layer }}"
+    details_level: "standard"
+    use_object_dictionnary: false
+    filter: "{{ _managed_tag }}"
+  register: _existing_tagged
+
+- name: (Optional) delete previously managed rules (by uid)
+  when: _managed_tag is defined and (_existing_tagged.access_rulebase | default([])) | length > 0
+  check_point.mgmt.cp_mgmt_delete_access_rule:
+    layer: "{{ _cp_layer }}"
+    uid: "{{ item.uid }}"
+  loop: "{{ _existing_tagged.access_rulebase | list }}"
+  loop_control: { label: "{{ item.name | default(item.uid) }}" }
+
+- name: Create/Update access rules
+  check_point.mgmt.cp_mgmt_access_rule:
+    layer: "{{ _cp_layer }}"
+    name: "{{ item.name }}"
+    position: "{{ item.position | default('top') }}"
+    source: "{{ item.source | default(['Any']) }}"
+    destination: "{{ item.destination | default(['Any']) }}"
+    service: "{{ item.service | default(['Any']) }}"
+    action: "{{ item.action | default('Accept') }}"
+    track: "{{ item.track | default('Log') }}"
+    enabled: "{{ item.enabled | default(true) }}"
+    time: "{{ item.time | default('Any') }}"
+    install_on: "{{ item.install_on | default(['Policy Targets']) }}"
+    tags: "{{ item.tags | default(omit) }}"
+    state: present
+  loop: "{{ cp_access_rules | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
