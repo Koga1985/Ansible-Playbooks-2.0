@@ -1,0 +1,25 @@
+---
+# Bind VPN domains on gateways/peers to a specific group/object.
+# Vars:
+#   vpn_domains:
+#     - gateway: "dc-gw1"                  # simple-gateway or cluster object
+#       type: "group"                      # group | network | range | host | ip
+#       value: "vpn-domain-dc"
+#     - gateway: "peer-branch1"
+#       type: "group"
+#       value: "vpn-domain-branch1"
+#   publish_changes: false
+
+- name: Set VPN domain using generic API (works across R8x)
+  check_point.mgmt.cp_mgmt_api_call:
+    command: "set-simple-gateway"
+    parameters:
+      name: "{{ item.gateway }}"
+      vpn_domain: "{{ item.type }}"
+      vpn_domain_definition: "{{ item.value }}"
+  loop: "{{ vpn_domains | default([]) }}"
+  loop_control: { label: "{{ item.gateway }}" }
+
+- name: Publish VPN domain bindings
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:
