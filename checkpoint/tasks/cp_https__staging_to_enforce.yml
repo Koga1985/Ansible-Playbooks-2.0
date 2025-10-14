@@ -1,0 +1,16 @@
+---
+# Switch HTTPS inspection from staging (monitor) to enforce (inspect).
+# Vars:
+#   https_enforcement:
+#     enabled: true        # true=enforce, false=monitor
+#     strip_ssl_on_fail: true
+
+- name: Set HTTPS enforcement mode
+  check_point.mgmt.cp_mgmt_api_call:
+    command: "set-https-inspection"
+    parameters:
+      enabled: "{{ https_enforcement.enabled | default(true) }}"
+      fail-open: "{{ (https_enforcement.strip_ssl_on_fail | default(true)) | ternary(false, true) }}"
+
+- name: Publish enforcement change
+  check_point.mgmt.cp_mgmt_publish:
