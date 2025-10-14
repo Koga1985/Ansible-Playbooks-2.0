@@ -1,0 +1,56 @@
+---
+# Toggle auto hide-SNAT on Host / Network objects (object-level NAT).
+#
+# Vars (any subset):
+#   cp_hosts_hide_nat:
+#     - { name: "web-servers-egress", enabled: true, hide_behind: "gateway" }  # gateway|ip
+#     - { name: "legacy-app", enabled: true, hide_behind: "ip", ip: "198.51.100.10" }
+#   cp_networks_hide_nat:
+#     - { name: "prod-net", enabled: false }
+#   publish_changes: true|false
+
+- name: Configure auto hide NAT on hosts
+  when: (cp_hosts_hide_nat | default([])) | length > 0
+  check_point.mgmt.cp_mgmt_host:
+    name: "{{ item.name }}"
+    state: present
+    nat_settings:
+      auto_rule: "{{ item.enabled | default(true) | bool }}"
+      method: "{{ (item.enabled | default(true)) | bool | ternary('hide', omit) }}"
+      hide_behind: >-
+        {{
+          (item.enabled | default(true)) | bool
+          | ternary( (item.hide_behind | default('gateway')), omit)
+        }}
+      ipv4_address: >-
+        {{
+          (item.enabled | default(true)) and (item.hide_behind | default('gateway')) == 'ip'
+          | ternary(item.ip, omit)
+        }}
+  loop: "{{ cp_hosts_hide_nat | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Configure auto hide NAT on networks
+  when: (cp_networks_hide_nat | default([])) | length > 0
+  check_point.mgmt.cp_mgmt_network:
+    name: "{{ item.name }}"
+    state: present
+    nat_settings:
+      auto_rule: "{{ item.enabled | default(true) | bool }}"
+      method: "{{ (item.enabled | default(true)) | bool | ternary('hide', omit) }}"
+      hide_behind: >-
+        {{
+          (item.enabled | default(true)) | bool
+          | ternary( (item.hide_behind | default('gateway')), omit)
+        }}
+      ipv4_address: >-
+        {{
+          (item.enabled | default(true)) and (item.hide_behind | default('gateway')) == 'ip'
+          | ternary(item.ip, omit)
+        }}
+  loop: "{{ cp_networks_hide_nat | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Publish object NAT changes
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:
