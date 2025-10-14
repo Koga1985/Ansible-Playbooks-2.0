@@ -1,0 +1,49 @@
+---
+# Create/Update L7 application/URL categories (requires licenses).
+# Two common object types:
+#   • Application Site (custom app/URL)
+#   • Application Category
+# Vars expected (either/both):
+#   cp_app_sites:
+#     - name: "GitHub"
+#       primary_category: "Developer Tools"   # existing category or custom
+#       url_list: ["github.com","*.githubusercontent.com"]
+#       additional_categories: ["Source Control"]
+#       risk: 2                   # 0-5 (optional)
+#       color: purple
+#       comment: "Dev tooling"
+#   cp_app_categories:
+#     - name: "Business-Apps"
+#       color: green
+#       comment: "Allowed business apps"
+#   publish_changes: true|false
+
+- name: Create/Update Application Categories
+  when: (cp_app_categories | default([])) | length > 0
+  check_point.mgmt.cp_mgmt_application_site_category:
+    state: present
+    name: "{{ item.name }}"
+    color: "{{ item.color | default(omit) }}"
+    comments: "{{ item.comment | default(omit) }}"
+  loop: "{{ cp_app_categories | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create/Update Application Sites
+  when: (cp_app_sites | default([])) | length > 0
+  check_point.mgmt.cp_mgmt_application_site:
+    state: present
+    name: "{{ item.name }}"
+    url_list: "{{ item.url_list | default([]) }}"
+    primary_category: "{{ item.primary_category | default(omit) }}"
+    additional_categories: "{{ item.additional_categories | default(omit) }}"
+    risk: "{{ item.risk | default(omit) }}"
+    color: "{{ item.color | default(omit) }}"
+    comments: "{{ item.comment | default(omit) }}"
+  loop: "{{ cp_app_sites | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Publish (L7 services)
+  when: publish_changes | default(false) | bool
+  check_point.mgmt.cp_mgmt_publish:
