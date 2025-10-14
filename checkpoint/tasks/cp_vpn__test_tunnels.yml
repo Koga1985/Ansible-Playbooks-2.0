@@ -1,0 +1,35 @@
+---
+# Query VPN tunnel status and export failing peers to CSV.
+# Vars:
+#   vpn_community: "HUB-SPOKES"       # optional — limit results
+#   artifacts_dir: "/tmp/checkpoint-artifacts"
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    _art: "{{ artifacts_dir | default('/tmp/checkpoint-artifacts') }}"
+    _comm: "{{ vpn_community | default(omit) }}"
+
+- name: Ensure artifact folder
+  ansible.builtin.file:
+    path: "{{ _art }}"
+    state: directory
+    mode: "0755"
+
+- name: Show VPN tunnels (generic API)
+  check_point.mgmt.cp_mgmt_api_call:
+    command: "show-vpn-tunnels"
+    parameters: "{{ {'community-name': _comm} if _comm is defined else {} }}"
+  register: _tunnels
+
+- name: Write failing/partial tunnels CSV
+  ansible.builtin.copy:
+    dest: "{{ _art }}/vpn_tunnels_status.csv"
+    mode: "0644"
+    content: |
+      community,center,satellite,state,last_change
+      {% for t in _tunnels.response.get('tunnels',[]) %}
+      {% set state = t.get('state','unknown') %}
+      {% if state not in ['up','green','ok'] %}
+      {{ t.get('community','') }},{{ t.get('center-gateway','') }},{{ t.get('satellite-gateway','') }},{{ state }},{{ t.get('last-changed','') }}
+      {% endif %}
+      {% endfor %}
