@@ -1,0 +1,34 @@
+---
+# Manage HTTPS Inspection bypass rules for categories, URLs, or networks.
+# Vars:
+#   https_layer_name: "HTTPS_Inspection"
+#   https_bypass:
+#     - name: "Bypass-Banking"
+#       position: "top"
+#       categories: ["Financial Services"]     # app/url categories
+#       track: "log"                           # log|none
+#       enabled: true
+#     - name: "Bypass-Local-Nets"
+#       position: "below Bypass-Banking"
+#       source: ["local-nets"]
+#       enabled: true
+
+- name: Defaults
+  ansible.builtin.set_fact:
+    _https_layer: "{{ https_layer_name | default('HTTPS_Inspection') }}"
+
+- name: Create/Update HTTPS rules (bypass)
+  check_point.mgmt.cp_mgmt_https_rule:
+    layer: "{{ _https_layer }}"
+    name: "{{ item.name }}"
+    position: "{{ item.position | default('top') }}"
+    source: "{{ item.source | default(omit) }}"
+    destination: "{{ item.destination | default(omit) }}"
+    services: "{{ item.services | default(omit) }}"
+    categories: "{{ item.categories | default(omit) }}"
+    action: "bypass"
+    track: "{{ item.track | default('log') }}"
+    enabled: "{{ item.enabled | default(true) }}"
+    state: present
+  loop: "{{ https_bypass | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
