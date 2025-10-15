@@ -1,0 +1,155 @@
+---
+# Inputs (examples):
+#   artifacts_dir: "/tmp/pan-artifacts"
+#   dry_run: true
+#   pa_allow_delete: false
+#   pa_use_panorama: false
+#   device_group: null
+#   vsys: "vsys1"
+#   pa_address_objects, pa_address_groups, pa_service_objects, pa_service_groups
+
+- name: Ensure artifacts dir exists
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/pan-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+# Address objects
+- name: Gather address objects
+  paloaltonetworks.panos.panos_object_facts:
+    object_type: "addresses"
+    device_group: "{{ device_group if pa_use_panorama | default(false) else omit }}"
+    vsys: "{{ vsys | default('vsys1') if not (pa_use_panorama | default(false)) else omit }}"
+  register: _addrfacts
+
+- name: Compute stale address objects
+  ansible.builtin.set_fact:
+    _desired_addr_names: "{{ (pa_address_objects | default([])) | map(attribute='name') | list }}"
+    _existing_addr_names: "{{ (_addrfacts.objects | default([])) | map(attribute='name') | list }}"
+    _stale_addr_names: "{{ _existing_addr_names | difference(_desired_addr_names) }}"
+
+- name: Write preview - addresses
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/pan-artifacts') }}/stale_addresses.csv"
+    mode: "0644"
+    content: |
+      name
+      {% for n in _stale_addr_names %}{{ n }}
+      {% endfor %}
+
+# Address groups
+- name: Gather address groups
+  paloaltonetworks.panos.panos_object_facts:
+    object_type: "address-groups"
+    device_group: "{{ device_group if pa_use_panorama | default(false) else omit }}"
+    vsys: "{{ vsys | default('vsys1') if not (pa_use_panorama | default(false)) else omit }}"
+  register: _agfacts
+
+- name: Compute stale address groups
+  ansible.builtin.set_fact:
+    _desired_ag_names: "{{ (pa_address_groups | default([])) | map(attribute='name') | list }}"
+    _existing_ag_names: "{{ (_agfacts.objects | default([])) | map(attribute='name') | list }}"
+    _stale_ag_names: "{{ _existing_ag_names | difference(_desired_ag_names) }}"
+
+- name: Write preview - address groups
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/pan-artifacts') }}/stale_address_groups.csv"
+    mode: "0644"
+    content: |
+      name
+      {% for n in _stale_ag_names %}{{ n }}
+      {% endfor %}
+
+# Services
+- name: Gather service objects
+  paloaltonetworks.panos.panos_object_facts:
+    object_type: "services"
+    device_group: "{{ device_group if pa_use_panorama | default(false) else omit }}"
+    vsys: "{{ vsys | default('vsys1') if not (pa_use_panorama | default(false)) else omit }}"
+  register: _svcfacts
+
+- name: Compute stale service objects
+  ansible.builtin.set_fact:
+    _desired_svc_names: "{{ (pa_service_objects | default([])) | map(attribute='name') | list }}"
+    _existing_svc_names: "{{ (_svcfacts.objects | default([])) | map(attribute='name') | list }}"
+    _stale_svc_names: "{{ _existing_svc_names | difference(_desired_svc_names) }}"
+
+- name: Write preview - services
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/pan-artifacts') }}/stale_services.csv"
+    mode: "0644"
+    content: |
+      name
+      {% for n in _stale_svc_names %}{{ n }}
+      {% endfor %}
+
+# Service groups
+- name: Gather service groups
+  paloaltonetworks.panos.panos_object_facts:
+    object_type: "service-groups"
+    device_group: "{{ device_group if pa_use_panorama | default(false) else omit }}"
+    vsys: "{{ vsys | default('vsys1') if not (pa_use_panorama | default(false)) else omit }}"
+  register: _sgfacts
+
+- name: Compute stale service groups
+  ansible.builtin.set_fact:
+    _desired_sg_names: "{{ (pa_service_groups | default([])) | map(attribute='name') | list }}"
+    _existing_sg_names: "{{ (_sgfacts.objects | default([])) | map(attribute='name') | list }}"
+    _stale_sg_names: "{{ _existing_sg_names | difference(_desired_sg_names) }}"
+
+- name: Write preview - service groups
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/pan-artifacts') }}/stale_service_groups.csv"
+    mode: "0644"
+    content: |
+      name
+      {% for n in _stale_sg_names %}{{ n }}
+      {% endfor %}
+
+- name: Stop here if dry-run
+  when: (dry_run | default(true)) | bool
+  ansible.builtin.debug:
+    msg: "Dry-run enabled — no deletions performed. CSVs written to {{ artifacts_dir | default('/tmp/pan-artifacts') }}"
+
+# Destructive (opt-in)
+- name: Guardrail — require explicit pa_allow_delete=true
+  when: not (dry_run | default(true)) | bool
+  ansible.builtin.assert:
+    that: [ pa_allow_delete | default(false) | bool ]
+    fail_msg: "Deletion blocked. Set pa_allow_delete: true to proceed."
+
+- name: Delete stale address objects
+  when: not (dry_run | default(true)) | bool
+  paloaltonetworks.panos.panos_address_object:
+    name: "{{ item }}"
+    state: "absent"
+    device_group: "{{ device_group if pa_use_panorama | default(false) else omit }}"
+    vsys: "{{ vsys | default('vsys1') if not (pa_use_panorama | default(false)) else omit }}"
+  loop: "{{ _stale_addr_names }}"
+
+- name: Delete stale address groups
+  when: not (dry_run | default(true)) | bool
+  paloaltonetworks.panos.panos_address_group:
+    name: "{{ item }}"
+    state: "absent"
+    device_group: "{{ device_group if pa_use_panorama | default(false) else omit }}"
+    vsys: "{{ vsys | default('vsys1') if not (pa_use_panorama | default(false)) else omit }}"
+  loop: "{{ _stale_ag_names }}"
+
+- name: Delete stale services
+  when: not (dry_run | default(true)) | bool
+  paloaltonetworks.panos.panos_service_object:
+    name: "{{ item }}"
+    state: "absent"
+    device_group: "{{ device_group if pa_use_panorama | default(false) else omit }}"
+    vsys: "{{ vsys | default('vsys1') if not (pa_use_panorama | default(false)) else omit }}"
+  loop: "{{ _stale_svc_names }}"
+
+- name: Delete stale service groups
+  when: not (dry_run | default(true)) | bool
+  paloaltonetworks.panos.panos_service_group:
+    name: "{{ item }}"
+    state: "absent"
+    device_group: "{{ device_group if pa_use_panorama | default(false) else omit }}"
+    vsys: "{{ vsys | default('vsys1') if not (pa_use_panorama | default(false)) else omit }}"
+  loop: "{{ _stale_sg_names }}"
