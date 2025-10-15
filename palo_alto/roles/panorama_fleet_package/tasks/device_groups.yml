@@ -1,0 +1,9 @@
+---
+- name: Ensure device groups exist (and attach devices when provided)
+  paloaltonetworks.panos.panos_device_group:
+    name: "{{ item.name }}"
+    description: "{{ item.description | default(omit) }}"
+    devices: "{{ item.devices | default(omit) }}"
+    state: present
+  loop: "{{ panorama_device_groups | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

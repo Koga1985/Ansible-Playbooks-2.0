@@ -1,0 +1,27 @@
+---
+- name: Build helper maps (DGs & Stacks)
+  ansible.builtin.set_fact:
+    _dg_names: "{{ (panorama_device_groups | default([])) | map(attribute='name') | list }}"
+    _stack_names: "{{ (panorama_template_stacks | default([])) | map(attribute='name') | list }}"
+
+- name: Place serials into device-groups and template stacks
+  vars:
+    _dg: "{{ item.device_group | default(omit) }}"
+    _stack: "{{ item.template_stack | default(omit) }}"
+  block:
+    - name: Attach serial to device-group
+      when: item.device_group is defined
+      paloaltonetworks.panos.panos_device_group:
+        name: "{{ item.device_group }}"
+        devices: [ "{{ item.serial }}" ]
+        state: present
+
+    - name: Attach serial to template stack
+      when: item.template_stack is defined
+      paloaltonetworks.panos.panos_template_stack:
+        name: "{{ item.template_stack }}"
+        devices: [ "{{ item.serial }}" ]
+        state: present
+  loop: "{{ panorama_fleet_devices | default([]) }}"
+  loop_control:
+    label: "{{ item.serial }}"

@@ -1,0 +1,23 @@
+---
+- hosts: panorama
+  gather_facts: false
+  roles:
+    - role: panorama_fleet
+      vars:
+        panorama_fleet_devices:
+          - serial: "0123456789"
+            device_group: "Prod"
+            template_stack: "Prod-Stack"
+        panorama_device_groups:
+          - name: "Prod"
+            description: "Production"
+            devices: ["0123456789"]
+        panorama_templates:
+          - name: "Base"
+          - name: "Datacenter"
+        panorama_template_stacks:
+          - name: "Prod-Stack"
+            templates: ["Base","Datacenter"]
+            devices: ["0123456789"]
+        commit_after_changes: true
+        commit_push_device_groups: ["Prod"]

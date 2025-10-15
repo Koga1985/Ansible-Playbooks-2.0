@@ -1,0 +1,37 @@
+---
+- name: Commit to Panorama (if enabled)
+  when: commit_after_changes | bool
+  paloaltonetworks.panos.panos_commit:
+    description: "{{ commit_description }}"
+
+- name: Compute device-groups to push (explicit or inferred)
+  when: commit_after_changes | bool
+  ansible.builtin.set_fact:
+    _dgs_to_push: >-
+      {{
+        (commit_push_device_groups | default([])) | length > 0
+        | ternary(
+            commit_push_device_groups,
+            (
+              (
+                (panorama_device_groups | default([])) | map(attribute='name') | list
+              )
+              +
+              (
+                (panorama_fleet_devices | default([]))
+                | selectattr('device_group', 'defined')
+                | map(attribute='device_group') | list
+              )
+            ) | unique
+          )
+      }}
+
+- name: Push to device-groups
+  when: commit_after_changes | bool and (_dgs_to_push | length) > 0
+  paloaltonetworks.panos.panos_commit_push:
+    device_group: "{{ item }}"
+    serial: "{{ commit_serial | bool }}"
+    include_template: "{{ include_template | bool }}"
+    include_device_and_network: "{{ include_device_and_network | bool }}"
+  loop: "{{ _dgs_to_push }}"
+  loop_control: { label: "{{ item }}" }

@@ -1,0 +1,9 @@
+---
+- name: Ensure template stacks exist (with templates + device attachment)
+  paloaltonetworks.panos.panos_template_stack:
+    name: "{{ item.name }}"
+    templates: "{{ item.templates | default([]) }}"
+    devices: "{{ item.devices | default([]) }}"
+    state: present
+  loop: "{{ panorama_template_stacks | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

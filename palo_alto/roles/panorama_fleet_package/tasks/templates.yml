@@ -1,0 +1,8 @@
+---
+- name: Ensure templates exist
+  paloaltonetworks.panos.panos_template:
+    name: "{{ item.name }}"
+    description: "{{ item.description | default(omit) }}"
+    state: present
+  loop: "{{ panorama_templates | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

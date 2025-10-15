@@ -1,0 +1,12 @@
+---
+panorama_fleet_devices: []
+panorama_device_groups: []
+panorama_templates: []
+panorama_template_stacks: []
+
+commit_description: "Automated Panorama commit via Ansible"
+commit_after_changes: true
+commit_push_device_groups: []
+commit_serial: true
+include_template: false
+include_device_and_network: false

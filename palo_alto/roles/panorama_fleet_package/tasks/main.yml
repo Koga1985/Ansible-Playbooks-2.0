@@ -1,0 +1,21 @@
+---
+- name: Validate Panorama context
+  ansible.builtin.assert:
+    that: ansible_network_os is defined
+    success_msg: "Running against Panorama (httpapi)."
+    fail_msg: "This role must run against Panorama via httpapi."
+
+- name: Create/Update Templates
+  import_tasks: templates.yml
+
+- name: Create/Update Template Stacks and attach devices
+  import_tasks: template_stacks.yml
+
+- name: Create/Update Device Groups and attach devices
+  import_tasks: device_groups.yml
+
+- name: Optional: onboard serials into declared DGs/Stacks
+  import_tasks: onboard.yml
+
+- name: Commit and optionally push to devices
+  import_tasks: commit.yml
