@@ -1,0 +1,67 @@
+---
+# Panorama/firewall awareness
+pa_use_panorama: false
+device_group: null     # for Panorama
+vsys: "vsys1"          # for firewalls
+
+artifacts_dir: "/tmp/pan-artifacts"
+commit_after_changes: true
+commit_description: "Apply ZPP / DoS / QoS via Ansible"
+
+# ---------- Zone Protection Profiles (ZPP) ----------
+zpp_profiles: []
+# - name: "ZPP-Internet"
+#   flood: { syn: { enable: true, red: true, alarm_rate: 1000, activate_rate: 2000, maximal_rate: 4000 } }
+#   reconnaissance: { host-sweep: true, tcp-port-scan: true, udp-port-scan: true }
+#   packet_based: { malformed: true, tcp_syn_ack: true, random_drop: 0 }
+#   description: "Zone protection for untrust"
+
+# Optional: bind ZPP to zones
+zpp_zone_bindings: []
+# - zone: "untrust"
+#   profile: "ZPP-Internet"
+
+# ---------- DoS Protection ----------
+dos_profiles: []
+# - name: "DoS-Agg-HTTPS"
+#   type: "aggregate"   # or "classified"
+#   syn_cookie: true
+#   max_rate: 50000
+#   block_duration: 60
+#   description: "Aggregate HTTPS floods"
+
+dos_rules: []
+# - name: "DoS-from-Internet"
+#   from_zones: ["untrust"]
+#   to_zones: ["dmz"]
+#   source: ["any"]
+#   destination: ["any"]
+#   services: ["service-https"]
+#   type: "aggregate"
+#   action: "protect"
+#   profile: "DoS-Agg-HTTPS"
+#   enable: true
+
+# ---------- QoS ----------
+qos_profiles: []
+# - name: "QoS-Default"
+#   class_bandwidth:
+#     class1: 10000    # kbps
+#     class2: 5000
+#     class3: 1000
+#     class4: 500
+#   interface: null    # set in policy not here
+#   description: "Default QoS"
+
+qos_policies: []
+# - name: "QoS-Web"
+#   from_zones: ["trust"]
+#   to_zones: ["untrust"]
+#   source: ["any"]
+#   destination: ["any"]
+#   applications: ["web-browsing","ssl"]
+#   services: ["application-default"]
+#   dscp_tos: null
+#   class: "class2"   # class1..class8 depending on device
+#   interface: "ethernet1/1"
+#   enable: true

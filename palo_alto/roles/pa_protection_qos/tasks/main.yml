@@ -1,0 +1,23 @@
+---
+- name: Ensure artifacts dir exists
+  ansible.builtin.file:
+    path: "{{ artifacts_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Configure Zone Protection Profiles
+  import_tasks: zpp.yml
+
+- name: Bind ZPP to zones
+  import_tasks: zpp_bind.yml
+
+- name: Configure DoS Protection (profiles + rules)
+  import_tasks: dos.yml
+
+- name: Configure QoS (profiles + policies)
+  import_tasks: qos.yml
+
+- name: Commit changes
+  when: commit_after_changes | bool
+  paloaltonetworks.panos.panos_commit:
+    description: "{{ commit_description }}"

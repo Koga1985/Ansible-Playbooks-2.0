@@ -1,0 +1,34 @@
+---
+- hosts: pan_firewalls
+  gather_facts: false
+  roles:
+    - role: pa_protection_qos
+      vars:
+        zpp_profiles:
+          - name: "ZPP-Internet"
+            flood: { syn: { enable: true, red: true, alarm_rate: 1000, activate_rate: 2000, maximal_rate: 4000 } }
+        zpp_zone_bindings:
+          - { zone: "untrust", profile: "ZPP-Internet" }
+        dos_profiles:
+          - { name: "DoS-Agg-HTTPS", type: "aggregate", max_rate: 50000, block_duration: 60 }
+        dos_rules:
+          - name: "DoS-from-Internet"
+            from_zones: ["untrust"]
+            to_zones: ["dmz"]
+            source: ["any"]
+            destination: ["any"]
+            services: ["service-https"]
+            action: "protect"
+            type: "aggregate"
+            profile: "DoS-Agg-HTTPS"
+        qos_profiles:
+          - name: "QoS-Default"
+            class_bandwidth: { class1: 10000, class2: 5000, class3: 1000 }
+        qos_policies:
+          - name: "QoS-Web"
+            from_zones: ["trust"]
+            to_zones: ["untrust"]
+            applications: ["web-browsing","ssl"]
+            services: ["application-default"]
+            class: "class2"
+            interface: "ethernet1/1"

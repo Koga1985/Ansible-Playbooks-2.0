@@ -1,0 +1,34 @@
+---
+# DoS Protection: Profiles, then Policy Rules
+
+- name: Create/Update DoS Protection Profiles
+  paloaltonetworks.panos.panos_dos_protection_profile:
+    name: "{{ item.name }}"
+    type: "{{ item.type | default('aggregate') }}"
+    syn_cookie: "{{ item.syn_cookie | default(omit) }}"
+    max_rate: "{{ item.max_rate | default(omit) }}"
+    block_duration: "{{ item.block_duration | default(omit) }}"
+    description: "{{ item.description | default(omit) }}"
+    device_group: "{{ device_group if pa_use_panorama | bool else omit }}"
+    vsys: "{{ vsys if not (pa_use_panorama | bool) else omit }}"
+    state: "present"
+  loop: "{{ dos_profiles | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Create/Update DoS Policy Rules
+  paloaltonetworks.panos.panos_dos_rule:
+    name: "{{ item.name }}"
+    from_zone: "{{ item.from_zones | default(['any']) }}"
+    to_zone: "{{ item.to_zones | default(['any']) }}"
+    source_ip: "{{ item.source | default(['any']) }}"
+    destination_ip: "{{ item.destination | default(['any']) }}"
+    services: "{{ item.services | default(['any']) }}"
+    action: "{{ item.action | default('protect') }}"
+    type: "{{ item.type | default('aggregate') }}"
+    protection_profile: "{{ item.profile | default(omit) }}"
+    enable: "{{ item.enable | default(true) }}"
+    device_group: "{{ device_group if pa_use_panorama | bool else omit }}"
+    vsys: "{{ vsys if not (pa_use_panorama | bool) else omit }}"
+    state: "present"
+  loop: "{{ dos_rules | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

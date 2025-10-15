@@ -1,0 +1,32 @@
+---
+# QoS: Profiles and Policies
+
+- name: Create/Update QoS Profiles
+  paloaltonetworks.panos.panos_qos_profile:
+    name: "{{ item.name }}"
+    class_bandwidth: "{{ item.class_bandwidth | default(omit) }}"
+    description: "{{ item.description | default(omit) }}"
+    device_group: "{{ device_group if pa_use_panorama | bool else omit }}"
+    vsys: "{{ vsys if not (pa_use_panorama | bool) else omit }}"
+    state: "present"
+  loop: "{{ qos_profiles | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Create/Update QoS Policy Rules
+  paloaltonetworks.panos.panos_qos_rule:
+    name: "{{ item.name }}"
+    from_zone: "{{ item.from_zones | default(['any']) }}"
+    to_zone: "{{ item.to_zones | default(['any']) }}"
+    source_ip: "{{ item.source | default(['any']) }}"
+    destination_ip: "{{ item.destination | default(['any']) }}"
+    application: "{{ item.applications | default(['any']) }}"
+    service: "{{ item.services | default(['any']) }}"
+    dscp_tos: "{{ item.dscp_tos | default(omit) }}"
+    class: "{{ item.class | default('class2') }}"
+    interface: "{{ item.interface | default(omit) }}"
+    enable: "{{ item.enable | default(true) }}"
+    device_group: "{{ device_group if pa_use_panorama | bool else omit }}"
+    vsys: "{{ vsys if not (pa_use_panorama | bool) else omit }}"
+    state: "present"
+  loop: "{{ qos_policies | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

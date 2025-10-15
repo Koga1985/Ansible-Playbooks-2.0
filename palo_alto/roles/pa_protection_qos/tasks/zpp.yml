@@ -1,0 +1,14 @@
+---
+# Create/Update Zone Protection Profiles
+- name: Create/Update Zone Protection Profiles
+  paloaltonetworks.panos.panos_zone_protection_profile:
+    name: "{{ item.name }}"
+    flood: "{{ item.flood | default(omit) }}"
+    reconnaissance: "{{ item.reconnaissance | default(omit) }}"
+    packet_based: "{{ item.packet_based | default(omit) }}"
+    description: "{{ item.description | default(omit) }}"
+    device_group: "{{ device_group if pa_use_panorama | bool else omit }}"
+    vsys: "{{ vsys if not (pa_use_panorama | bool) else omit }}"
+    state: "present"
+  loop: "{{ zpp_profiles | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

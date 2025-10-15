@@ -1,0 +1,13 @@
+---
+# Bind ZPP profiles to zones
+- name: Bind ZPP to zones
+  when: (zpp_zone_bindings | default([])) | length > 0
+  paloaltonetworks.panos.panos_zone:
+    zone: "{{ item.zone }}"
+    zone_profile: "{{ item.profile }}"
+    mode: "layer3"   # adjust if your zone mode differs
+    device_group: "{{ device_group if pa_use_panorama | bool else omit }}"
+    vsys: "{{ vsys if not (pa_use_panorama | bool) else omit }}"
+    state: "present"
+  loop: "{{ zpp_zone_bindings | default([]) }}"
+  loop_control: { label: "{{ item.zone }} → {{ item.profile }}" }
