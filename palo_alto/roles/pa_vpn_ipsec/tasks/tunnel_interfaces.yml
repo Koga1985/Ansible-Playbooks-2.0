@@ -1,0 +1,47 @@
+---
+- name: Create/Update tunnel interfaces
+  paloaltonetworks.panos.panos_tunnel:
+    name: "{{ item.name }}"
+    comment: "{{ item.comment | default(omit) }}"
+    template: "{{ template | default(omit) if pa_use_panorama | bool else omit }}"
+    template_stack: "{{ template_stack | default(omit) if pa_use_panorama | bool else omit }}"
+    state: "present"
+  loop: "{{ tunnel_interfaces | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Assign IP to tunnel interfaces (if provided)
+  when: item.ipv4_address is defined
+  paloaltonetworks.panos.panos_interface:
+    if_name: "{{ item.name }}"
+    mode: "layer3"
+    ip: ["{{ item.ipv4_address }}"]
+    template: "{{ template | default(omit) if pa_use_panorama | bool else omit }}"
+    template_stack: "{{ template_stack | default(omit) if pa_use_panorama | bool else omit }}"
+    state: "present"
+  loop: "{{ tunnel_interfaces | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Add tunnel to virtual router
+  when: item.vr is defined
+  paloaltonetworks.panos.panos_virtual_router:
+    name: "{{ item.vr }}"
+    interface: ["{{ item.name }}"]
+    template: "{{ template | default(omit) if pa_use_panorama | bool else omit }}"
+    template_stack: "{{ template_stack | default(omit) if pa_use_panorama | bool else omit }}"
+    state: "present"
+  loop: "{{ tunnel_interfaces | default([]) }}"
+  loop_control: { label: "{{ item.vr | default('vr') }} ← {{ item.name }}" }
+
+- name: Put tunnel in zone
+  when: item.zone is defined
+  paloaltonetworks.panos.panos_zone:
+    zone: "{{ item.zone }}"
+    mode: "layer3"
+    interface: ["{{ item.name }}"]
+    device_group: "{{ device_group if pa_use_panorama | bool else omit }}"
+    vsys: "{{ vsys if not (pa_use_panorama | bool) else omit }}"
+    template: "{{ template | default(omit) if pa_use_panorama | bool else omit }}"
+    template_stack: "{{ template_stack | default(omit) if pa_use_panorama | bool else omit }}"
+    state: "present"
+  loop: "{{ tunnel_interfaces | default([]) }}"
+  loop_control: { label: "{{ item.zone | default('zone') }} ← {{ item.name }}" }

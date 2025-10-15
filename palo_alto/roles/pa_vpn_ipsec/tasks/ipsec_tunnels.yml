@@ -1,0 +1,17 @@
+---
+- name: Create/Update IPsec Tunnels (auto-key)
+  when: item.type | default('auto-key') == 'auto-key'
+  paloaltonetworks.panos.panos_ipsec_tunnel:
+    name: "{{ item.name }}"
+    tunnel_interface: "{{ item.tunnel_interface }}"
+    ak_ike_gateway: "{{ item.ak_ike_gateway }}"
+    ak_ipsec_crypto_profile: "{{ item.ak_ipsec_crypto_profile }}"
+    copy_tos: "{{ item.copy_tos | default(false) }}"
+    tunnel_monitor: "{{ item.enable_tunnel_monitor | default(false) }}"
+    monitor_dest_ip: "{{ item.monitor_dest_ip | default(omit) }}"
+    monitor_profile: "{{ item.monitor_profile | default(omit) }}"
+    template: "{{ template | default(omit) if pa_use_panorama | bool else omit }}"
+    template_stack: "{{ template_stack | default(omit) if pa_use_panorama | bool else omit }}"
+    state: "present"
+  loop: "{{ ipsec_tunnels | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

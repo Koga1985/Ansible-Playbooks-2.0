@@ -1,0 +1,21 @@
+---
+pa_use_panorama: false
+device_group: null
+vsys: "vsys1"
+template: null
+template_stack: null
+
+artifacts_dir: "/tmp/pan-artifacts"
+commit_after_changes: true
+commit_description: "Apply IPsec VPN via Ansible"
+
+ike_crypto_profiles: []
+ipsec_crypto_profiles: []
+ike_gateways: []
+tunnel_interfaces: []
+ipsec_tunnels: []
+tunnel_static_routes: []
+bgp_sessions: []
+vpn_monitoring:
+  enabled: true
+  csv_prefix: "vpn_status"

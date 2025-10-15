@@ -1,0 +1,20 @@
+---
+- name: Create/Update IKE Gateways
+  paloaltonetworks.panos.panos_ike_gateway:
+    name: "{{ item.name }}"
+    version: "{{ item.version | default('ikev2') }}"
+    interface: "{{ item.interface }}"
+    local_ip_address: "{{ item.local_ip_address | default(omit) }}"
+    peer_ip_value: "{{ item.peer_ip_value }}"
+    pre_shared_key: "{{ item.pre_shared_key | default(omit) }}"
+    peer_id_type: "{{ item.peer_id_type | default(omit) }}"
+    local_id_type: "{{ item.local_id_type | default(omit) }}"
+    local_id_value: "{{ item.local_id_value | default(omit) }}"
+    liveness_check: "{{ item.liveness_check | default(true) }}"
+    ikev2_proposal: "{{ item.IKEv2_proposal | default(omit) }}"
+    nat_traversal: "{{ item.nat_traversal | default(true) }}"
+    template: "{{ template | default(omit) if pa_use_panorama | bool else omit }}"
+    template_stack: "{{ template_stack | default(omit) if pa_use_panorama | bool else omit }}"
+    state: "present"
+  loop: "{{ ike_gateways | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

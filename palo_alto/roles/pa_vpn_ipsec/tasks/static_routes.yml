@@ -1,0 +1,14 @@
+---
+- name: Configure static routes for tunnel next-hops
+  paloaltonetworks.panos.panos_static_route:
+    name: "{{ item.destination }} via {{ item.next_hop }}"
+    destination: "{{ item.destination }}"
+    nexthop_type: "ip-address"
+    nexthop: "{{ item.next_hop }}"
+    interface: "{{ item.interface | default(omit) }}"
+    virtual_router: "{{ item.vr | default('default') }}"
+    template: "{{ template | default(omit) if pa_use_panorama | bool else omit }}"
+    template_stack: "{{ template_stack | default(omit) if pa_use_panorama | bool else omit }}"
+    state: "present"
+  loop: "{{ tunnel_static_routes | default([]) }}"
+  loop_control: { label: "{{ item.destination }} → {{ item.next_hop }}" }

@@ -1,0 +1,35 @@
+---
+- name: Monitor tunnels (IKE/IPsec) and export CSVs
+  when: vpn_monitoring.enabled | default(true) | bool
+  block:
+    - name: Show IKE SAs
+      paloaltonetworks.panos.panos_op:
+        cmd: "<show><vpn><ike-sa></ike-sa></vpn></show>"
+      register: _ike
+
+    - name: Show IPsec SAs
+      paloaltonetworks.panos.panos_op:
+        cmd: "<show><vpn><ipsec-sa></ipsec-sa></vpn></show>"
+      register: _ipsec
+
+    - name: Write IKE status CSV
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/{{ vpn_monitoring.csv_prefix | default('vpn_status') }}_ike.csv"
+        mode: "0644"
+        content: |
+          peer,state,local_ip,peer_ip,phase1
+          {% set entries = _ike.stdout_xml.response.result.ike-sa | default([]) %}
+          {% for e in (entries if entries is iterable else [entries]) %}
+          {{ e.peer | default('') }},{{ e.state | default('') }},{{ e.localip | default('') }},{{ e.peerip | default('') }},{{ e.version | default('') }}
+          {% endfor %}
+
+    - name: Write IPsec status CSV
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/{{ vpn_monitoring.csv_prefix | default('vpn_status') }}_ipsec.csv"
+        mode: "0644"
+        content: |
+          peer,state,tunnel,spi_encr,spi_auth
+          {% set entries = _ipsec.stdout_xml.response.result.tunnel | default([]) %}
+          {% for t in (entries if entries is iterable else [entries]) %}
+          {{ t.peer | default('') }},{{ t.state | default('') }},{{ t.name | default('') }},{{ t.enc | default('') }},{{ t.auth | default('') }}
+          {% endfor %}

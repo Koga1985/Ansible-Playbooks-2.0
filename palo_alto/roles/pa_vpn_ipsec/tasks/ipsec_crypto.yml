@@ -1,0 +1,13 @@
+---
+- name: Create/Update IPsec Crypto Profiles
+  paloaltonetworks.panos.panos_ipsec_crypto_profile:
+    name: "{{ item.name }}"
+    esp_authentication: "{{ item.esp_auth | default(omit) }}"
+    esp_encryption: "{{ item.esp_encryption | default(omit) }}"
+    dh_group: "{{ item.dh_group | default(omit) }}"
+    lifetime_seconds: "{{ item.lifetime_seconds | default(omit) }}"
+    template: "{{ template | default(omit) if pa_use_panorama | bool else omit }}"
+    template_stack: "{{ template_stack | default(omit) if pa_use_panorama | bool else omit }}"
+    state: "present"
+  loop: "{{ ipsec_crypto_profiles | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

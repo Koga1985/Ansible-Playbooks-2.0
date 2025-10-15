@@ -1,0 +1,14 @@
+---
+- name: Create/Update IKE Crypto Profiles
+  paloaltonetworks.panos.panos_ike_crypto_profile:
+    name: "{{ item.name }}"
+    dh_group: "{{ item.dh_group | default(omit) }}"
+    authentication: "{{ item.authentication | default(omit) }}"
+    encryption: "{{ item.encryption | default(omit) }}"
+    lifetime_seconds: "{{ item.lifetime_seconds | default(omit) }}"
+    ikev2: "{{ item.ikev2 | default(true) }}"
+    template: "{{ template | default(omit) if pa_use_panorama | bool else omit }}"
+    template_stack: "{{ template_stack | default(omit) if pa_use_panorama | bool else omit }}"
+    state: "present"
+  loop: "{{ ike_crypto_profiles | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

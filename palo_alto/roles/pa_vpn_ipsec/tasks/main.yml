@@ -1,0 +1,32 @@
+---
+- name: Ensure artifacts dir exists
+  ansible.builtin.file:
+    path: "{{ artifacts_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Configure IKE crypto profiles
+  import_tasks: ike_crypto.yml
+
+- name: Configure IPsec crypto profiles
+  import_tasks: ipsec_crypto.yml
+
+- name: Configure IKE gateways
+  import_tasks: ike_gateways.yml
+
+- name: Configure tunnel interfaces
+  import_tasks: tunnel_interfaces.yml
+
+- name: Configure IPsec tunnels
+  import_tasks: ipsec_tunnels.yml
+
+- name: Optional: static routes for tunnel next-hops
+  import_tasks: static_routes.yml
+
+- name: Optional: monitor tunnels and export CSV
+  import_tasks: monitoring.yml
+
+- name: Commit changes
+  when: commit_after_changes | bool
+  paloaltonetworks.panos.panos_commit:
+    description: "{{ commit_description }}"
