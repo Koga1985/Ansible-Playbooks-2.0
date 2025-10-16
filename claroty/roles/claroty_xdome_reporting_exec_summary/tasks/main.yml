@@ -1,0 +1,63 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory, mode: "0755" }
+
+- name: Pull assets for coverage
+  ansible.builtin.uri:
+    url: "{{ claroty.base_url }}/v1/assets/search"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ inventory_filter }}"
+    status_code: 200
+    return_content: true
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: assets
+
+- name: Pull open risks
+  ansible.builtin.uri:
+    url: "{{ claroty.base_url }}/v1/risks/search"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ risk_filter }}"
+    status_code: 200
+    return_content: true
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: risks
+
+- name: Pull recent alerts
+  ansible.builtin.uri:
+    url: "{{ claroty.base_url }}/v1/alerts/search"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ alerts_filter }}"
+    status_code: 200
+    return_content: true
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: alerts
+
+- name: Write coverage CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/{{ coverage_csv }}"
+    mode: "0644"
+    content: |
+      total_assets,sites,device_types
+      {% set items = assets.json.items | default([]) %}
+      {% set sites = items | map(attribute='site.name') | list | unique | select('string') | list %}
+      {% set types = items | map(attribute='type') | list | unique | select('string') | list %}
+      {{ items | length }},{{ sites | length }},{{ types | length }}
+
+- name: Write KPI CSV (risk & MTTR placeholder)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/{{ kpi_csv }}"
+    mode: "0644"
+    content: |
+      date,open_risks,critical_high,median_risk,mttr_days_est
+      {% set ritems = risks.json.items | default([]) %}
+      {% set total = ritems | length %}
+      {% set crit = (ritems | selectattr('riskScore','>=',80) | list) | length %}
+      {% set med = (ritems | map(attribute='riskScore') | list | sort)[(total//2) if total>0 else 0] | default(0) %}
+      {% set mttr = 0 %}
+      {{ lookup('ansible.builtin.pipe','date -u +%Y-%m-%d') }},{{ total }},{{ crit }},{{ med }},{{ mttr }}

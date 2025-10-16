@@ -1,0 +1,11 @@
+---
+artifacts_dir: "/tmp/claroty-artifacts"
+
+# Filters for reports
+inventory_filter: { }   # for coverage (e.g., by site)
+risk_filter: { status: ["open"], minRisk: 1 }
+alerts_filter: { severity: ["high","critical"], since: "30d" }
+
+# Output filenames
+coverage_csv: "exec_coverage.csv"
+kpi_csv: "exec_kpi.csv"

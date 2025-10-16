@@ -1,0 +1,9 @@
+---
+artifacts_dir: "/tmp/claroty-artifacts"
+
+# Users/vendors to onboard
+users: []   # [{ email, name, roles: ['vendor','ops'], expires: '2025-12-31', groups: ['vendor-acme'] }]
+
+# Access policies/profiles to assign (idempotent creates/updates)
+access_policies: []  # [{ name, description, scopes: ['site:A','zone:Purdue-L2'], approval_required: true, max_duration_minutes: 240 }]
+profiles: []         # [{ name, mfa: true, clipboarding: false, file_transfer: 'deny' }]

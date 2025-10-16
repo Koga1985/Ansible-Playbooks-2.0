@@ -1,0 +1,17 @@
+---
+artifacts_dir: "/tmp/claroty-artifacts"
+
+# Session-policy settings (example structure)
+session_policy:
+  approval_required: true
+  emergency_access:
+    enabled: true
+    max_duration_minutes: 120
+    justification_required: true
+  recording:
+    enabled: true
+    include_input: true
+    retention_days: 30
+  session_limits:
+    idle_timeout_minutes: 15
+    max_duration_minutes: 240

@@ -1,0 +1,8 @@
+---
+artifacts_dir: "/tmp/claroty-artifacts"
+flow_filter: { timeframe: "7d", limit: 5000 }
+export_ngfw: true
+ngfw_target: "panos"
+ngfw_template_filename: "allowlist_template.yml"
+deployed_policy_file: null
+drift_report_filename: "allowlist_drift.csv"

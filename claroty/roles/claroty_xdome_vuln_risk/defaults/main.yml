@@ -1,0 +1,5 @@
+---
+artifacts_dir: "/tmp/claroty-artifacts"
+risk_filter: { status: ["open"], minRisk: 1, limit: 1000 }
+ticketing: { enable: false, system: "servicenow", instance: null, token: "{{ lookup('env','TICKET_TOKEN') }}", table: "incident", project_key: "SEC", resolve_when_closed: true }
+kpi: { enabled: true, csv_prefix: "xdome_risk_trend" }

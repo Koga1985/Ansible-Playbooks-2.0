@@ -1,0 +1,8 @@
+---
+artifacts_dir: "/tmp/claroty-artifacts"
+alert_filter: { severity: ["high","critical"], since: "24h", limit: 2000 }
+forward: { enabled: false, type: "http", endpoint: "https://siem.example/ingest", token: "REDACTED", verify_ssl: true }
+hooks:
+  tag_asset: false
+  raise_ticket: false
+  ticketing: { system: "servicenow", instance: null, token: "{{ lookup('env','TICKET_TOKEN') }}", table: "incident", project_key: "SEC" }

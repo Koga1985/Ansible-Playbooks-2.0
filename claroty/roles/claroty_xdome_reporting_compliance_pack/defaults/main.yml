@@ -1,0 +1,12 @@
+---
+artifacts_dir: "/tmp/claroty-artifacts"
+
+# Filters for compliance artifacts
+alerts_filter: { severity: ["high","critical"], since: "30d" }
+access_logs_filter: { since: "30d" }
+changes_filter: { since: "30d" }
+
+# Output filenames
+alerts_csv: "compliance_alerts.csv"
+access_csv: "compliance_access.csv"
+changes_csv: "compliance_changes.csv"

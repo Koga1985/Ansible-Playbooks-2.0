@@ -1,0 +1,10 @@
+---
+artifacts_dir: "/tmp/claroty-artifacts"
+
+# Log export filter
+logs_filter:
+  since: "24h"         # last 24 hours
+  severity: []         # optional: ["high","critical"]
+  limit: 5000
+
+csv_filename: "secure_access_logs.csv"

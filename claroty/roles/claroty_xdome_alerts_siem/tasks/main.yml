@@ -1,0 +1,79 @@
+---
+- file: { path: "{{ artifacts_dir }}", state: directory, mode: "0755" }
+- uri:
+    url: "{{ claroty.base_url }}/v1/alerts/search"
+    method: POST
+    body_format: json
+    body: "{{ alert_filter }}"
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: alerts
+- copy:
+    dest: "{{ artifacts_dir }}/xdome_alerts.csv"
+    mode: "0644"
+    content: |
+      id,severity,category,asset,site,detected_at,status,desc
+      {% for a in alerts.json.items | default([]) %}
+      {{ a.id | default('') }},{{ a.severity | default('') }},{{ a.category | default('') }},
+      {{ a.asset.name | default('') }},{{ a.asset.site.name | default('') }},
+      {{ a.detectedAt | default('') }},{{ a.status | default('') }},
+      {{ (a.description | default('')) | replace('\n',' ') | replace(',',' ') }}
+      {% endfor %}
+- uri:
+    url: "{{ forward.endpoint }}"
+    method: POST
+    headers: { Authorization: "Bearer {{ forward.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ alerts.json.items | default([]) }}"
+    status_code: [200,201,202]
+    validate_certs: "{{ forward.verify_ssl | default(true) }}"
+  when: forward.enabled | bool and forward.type == 'http'
+- uri:
+    url: "{{ claroty.base_url }}/v1/assets/{{ item.asset.id }}/tags"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: { tags: ["alert:{{ item.severity | default('') }}"] }
+    status_code: [200,201,204]
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  when: hooks.tag_asset | bool
+  loop: "{{ alerts.json.items | default([]) | selectattr('severity','in',['high','critical']) | list }}"
+  loop_control: { label: "{{ item.asset.name | default(item.asset.id) }}" }
+- uri:
+    url: "https://{{ hooks.ticketing.instance }}/api/now/table/{{ hooks.ticketing.table }}"
+    method: POST
+    headers: { Authorization: "Bearer {{ hooks.ticketing.token }}", Content-Type: "application/json" }
+    body_format: json
+    body:
+      short_description: "Claroty alert {{ item.id }} ({{ item.severity }})"
+      description: "Asset: {{ item.asset.name | default('') }} Site: {{ item.asset.site.name | default('') }} Category: {{ item.category | default('') }}"
+      category: "security"
+      subcategory: "alert"
+      impact: "2"
+      urgency: "2"
+      u_claroty_alert_id: "{{ item.id }}"
+    status_code: [200,201]
+    return_content: true
+    validate_certs: true
+  when: hooks.raise_ticket | bool and hooks.ticketing.system == 'servicenow'
+  loop: "{{ alerts.json.items | default([]) | selectattr('severity','in',['high','critical']) | list }}"
+  loop_control: { label: "{{ item.id }}" }
+- uri:
+    url: "https://{{ hooks.ticketing.instance }}/rest/api/2/issue"
+    method: POST
+    headers: { Authorization: "Bearer {{ hooks.ticketing.token }}", Content-Type: "application/json" }
+    body_format: json
+    body:
+      fields:
+        project: { key: "{{ hooks.ticketing.project_key }}" }
+        summary: "Claroty alert {{ item.id }} ({{ item.severity }})"
+        description: "Asset: {{ item.asset.name | default('') }} Site: {{ item.asset.site.name | default('') }} Category: {{ item.category | default('') }}"
+        issuetype: { name: "Task" }
+    status_code: [200,201]
+    return_content: true
+    validate_certs: true
+  when: hooks.raise_ticket | bool and hooks.ticketing.system == 'jira'
+  loop: "{{ alerts.json.items | default([]) | selectattr('severity','in',['high','critical']) | list }}"
+  loop_control: { label: "{{ item.id }}" }

@@ -1,0 +1,60 @@
+---
+- file: { path: "{{ artifacts_dir }}", state: directory, mode: "0755" }
+- uri:
+    url: "{{ claroty.base_url }}/v1/communications/search"
+    method: POST
+    body_format: json
+    body: "{{ flow_filter }}"
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: comms
+- copy:
+    dest: "{{ artifacts_dir }}/xdome_flows.csv"
+    mode: "0644"
+    content: |
+      from_zone,to_zone,src_tag,dst_tag,app,service,src_ip,dst_ip,remark
+      {% for c in comms.json.items | default([]) %}
+      {{ c.src.zone | default('') }},{{ c.dst.zone | default('') }},
+      {{ c.src.tag | default('') }},{{ c.dst.tag | default('') }},
+      {{ c.application | default('any') }},{{ c.service | default('any') }},
+      {{ c.src.ip | default('') }},{{ c.dst.ip | default('') }},
+      Observed flow
+      {% endfor %}
+- set_fact:
+    _allowlist_rules: >-
+      {{
+        (comms.json.items | default([])) |
+        map('extract', {
+          'from_zone': 'src.zone', 'to_zone': 'dst.zone',
+          'source': 'src.tag', 'destination': 'dst.tag',
+          'application': 'application', 'service': 'service'
+        }) | list | unique
+      }}
+- copy:
+    dest: "{{ artifacts_dir }}/{{ ngfw_template_filename }}"
+    mode: "0644"
+    content: |
+      rules:
+      {% for r in _allowlist_rules %}
+        - name: "ALLOW {{ r.from_zone | default('any') }}→{{ r.to_zone | default('any') }} {{ r.application | default('any') }}"
+          from: ["{{ r.from_zone | default('any') }}"]
+          to: ["{{ r.to_zone | default('any') }}"]
+          source: ["{{ r.source | default('any') }}"]
+          destination: ["{{ r.destination | default('any') }}"]
+          application: ["{{ r.application | default('any') }}"]
+          service: ["{{ r.service | default('application-default') }}"]
+          action: "allow"
+      {% endfor %}
+  when: export_ngfw | bool
+- when: deployed_policy_file is not none
+  block:
+    - slurp: { src: "{{ deployed_policy_file }}" }
+      register: _dep_raw
+    - copy:
+        dest: "{{ artifacts_dir }}/{{ drift_report_filename }}"
+        mode: "0644"
+        content: |
+          generated_rules,comparison_note
+          {{ _allowlist_rules | length }},"Provide NGFW export parser for exact diff"

@@ -1,0 +1,59 @@
+---
+- file: { path: "{{ artifacts_dir }}", state: directory, mode: "0755" }
+- uri:
+    url: "{{ claroty.base_url }}/v1/risks/search"
+    method: POST
+    body_format: json
+    body: "{{ risk_filter }}"
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: risks
+- copy:
+    dest: "{{ artifacts_dir }}/xdome_risks.csv"
+    mode: "0644"
+    content: |
+      id,asset,site,type,cve,cvss,risk,exploit,assigned,status,detected_at
+      {% for r in risks.json.items | default([]) %}
+      {{ r.id | default('') }},{{ r.asset.name | default('') }},{{ r.asset.site.name | default('') }},
+      {{ r.asset.type | default('') }},{{ r.cve | default('') }},{{ r.cvss | default('') }},
+      {{ r.riskScore | default('') }},{{ r.exploitability | default('') }},
+      {{ r.assignee | default('') }},{{ r.status | default('') }},{{ r.detectedAt | default('') }}
+      {% endfor %}
+- set_fact: { _worklist: "{{ (risks.json.items | default([])) | selectattr('riskScore','>=',80) | list }}" }
+- uri:
+    url: "https://{{ ticketing.instance }}/api/now/table/{{ ticketing.table }}"
+    method: POST
+    headers: { Authorization: "Bearer {{ ticketing.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: { short_description: "Claroty risk {{ item.id }} on {{ item.asset.name | default('asset') }}", description: "CVE: {{ item.cve | default('N/A') }} Risk: {{ item.riskScore | default('') }} Site: {{ item.asset.site.name | default('') }}", category: "security", subcategory: "vulnerability", impact: "2", urgency: "2", u_claroty_id: "{{ item.id }}" }
+    status_code: [200,201]
+    return_content: true
+    validate_certs: true
+  when: ticketing.enable | bool and ticketing.system == 'servicenow'
+  loop: "{{ _worklist }}"
+  loop_control: { label: "{{ item.id }}" }
+- uri:
+    url: "https://{{ ticketing.instance }}/rest/api/2/issue"
+    method: POST
+    headers: { Authorization: "Bearer {{ ticketing.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: { fields: { project: { key: "{{ ticketing.project_key }}" }, summary: "Claroty risk {{ item.id }} on {{ item.asset.name | default('asset') }}", description: "CVE: {{ item.cve | default('N/A') }} Risk: {{ item.riskScore | default('') }} Site: {{ item.asset.site.name | default('') }}", issuetype: { name: "Task" } } }
+    status_code: [200,201]
+    return_content: true
+    validate_certs: true
+  when: ticketing.enable | bool and ticketing.system == 'jira'
+  loop: "{{ _worklist }}"
+  loop_control: { label: "{{ item.id }}" }
+- copy:
+    dest: "{{ artifacts_dir }}/{{ kpi.csv_prefix }}_daily.csv"
+    mode: "0644"
+    content: |
+      date,total_open,critical_high,median_risk
+      {% set items = risks.json.items | default([]) %}
+      {% set total = items | length %}
+      {% set crit = (items | selectattr('riskScore','>=',80) | list) | length %}
+      {% set med = (items | map(attribute='riskScore') | list | sort)[(total//2) if total>0 else 0] | default(0) %}
+      {{ lookup('ansible.builtin.pipe','date -u +%Y-%m-%d') }},{{ total }},{{ crit }},{{ med }}
+  when: kpi.enabled | bool

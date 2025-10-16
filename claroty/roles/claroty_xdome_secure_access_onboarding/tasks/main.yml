@@ -1,0 +1,42 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory, mode: "0755" }
+
+- name: Onboard users/vendors
+  ansible.builtin.uri:
+    url: "{{ claroty.base_url }}/v1/secure-access/users"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: [200,201]
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+    return_content: true
+  loop: "{{ users }}"
+  loop_control: { label: "{{ item.email | default(item.name) }}" }
+
+- name: Create/Update access policies
+  ansible.builtin.uri:
+    url: "{{ claroty.base_url }}/v1/secure-access/policies"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: [200,201]
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+    return_content: true
+  loop: "{{ access_policies }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Create/Update access profiles
+  ansible.builtin.uri:
+    url: "{{ claroty.base_url }}/v1/secure-access/profiles"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: [200,201]
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+    return_content: true
+  loop: "{{ profiles }}"
+  loop_control: { label: "{{ item.name }}" }

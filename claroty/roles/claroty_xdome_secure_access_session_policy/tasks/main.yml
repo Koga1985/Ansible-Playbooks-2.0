@@ -1,0 +1,10 @@
+---
+- name: Apply session-policy (approval/emergency/recording)
+  ansible.builtin.uri:
+    url: "{{ claroty.base_url }}/v1/secure-access/session-policy"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ session_policy }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"

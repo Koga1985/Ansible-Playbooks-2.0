@@ -1,0 +1,28 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory, mode: "0755" }
+
+- name: Export Secure Access logs
+  ansible.builtin.uri:
+    url: "{{ claroty.base_url }}/v1/secure-access/logs/search"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ logs_filter }}"
+    status_code: 200
+    return_content: true
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: _logs
+
+- name: Write CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/{{ csv_filename }}"
+    mode: "0644"
+    content: |
+      datetime,user,vendor,asset,site,action,result,reason,session_id
+      {% for L in _logs.json.items | default([]) %}
+      {{ L.timestamp | default('') }},{{ L.user.email | default('') }},{{ L.user.vendor | default('') }},
+      {{ L.asset.name | default('') }},{{ L.asset.site.name | default('') }},
+      {{ L.action | default('') }},{{ L.result | default('') }},{{ L.reason | default('') }},
+      {{ L.sessionId | default('') }}
+      {% endfor %}
