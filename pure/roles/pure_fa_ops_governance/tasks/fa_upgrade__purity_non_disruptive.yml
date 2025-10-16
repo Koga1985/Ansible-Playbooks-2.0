@@ -1,0 +1,15 @@
+
+- name: Gather current array & controller health
+  purestorage.flasharray.purefa_info:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    gather_subset: [ array, controllers ]
+  register: fa_health
+- name: Guardrail — abort if any controller degraded
+  ansible.builtin.fail:
+    msg: "Controller degraded; refusing to upgrade."
+  when: fa_health.controllers_info | selectattr('status','match','degraded|fault|error') | list | length > 0
+- name: (Dry run) Show intended upgrade
+  when: upgrade.dry_run | default(True)
+  ansible.builtin.debug:
+    msg: "Would upgrade {{ fa_health.array_info.model }} from {{ fa_health.array_info.version }} to {{ upgrade.target_version | default('N/A') }}"

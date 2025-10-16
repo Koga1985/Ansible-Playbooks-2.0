@@ -1,0 +1,11 @@
+
+- name: Create/update buckets
+  purestorage.flashblade.purefb_bucket:
+    fb_url: "{{ fb_url }}"
+    api_token: "{{ fb_token }}"
+    name: "{{ item.name }}"
+    versioning: "{{ item.versioning | default(omit) }}"
+    object_lock: "{{ item.object_lock | default(omit) }}"
+    state: present
+  loop: "{{ buckets | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

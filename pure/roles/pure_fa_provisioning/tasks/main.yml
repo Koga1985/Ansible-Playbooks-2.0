@@ -1,0 +1,17 @@
+---
+- name: Include fa_vol__create.yml
+  ansible.builtin.import_tasks: fa_vol__create.yml
+- name: Include fa_host__create.yml
+  ansible.builtin.import_tasks: fa_host__create.yml
+- name: Include fa_hostgroup__create.yml
+  ansible.builtin.import_tasks: fa_hostgroup__create.yml
+- name: Include fa_map__vol_to_host.yml
+  ansible.builtin.import_tasks: fa_map__vol_to_host.yml
+- name: Include fa_pod__manage.yml
+  ansible.builtin.import_tasks: fa_pod__manage.yml
+- name: Include fa_dirsvc__ad_ldap.yml
+  ansible.builtin.import_tasks: fa_dirsvc__ad_ldap.yml
+- name: Include fa_vlans_ports__configure.yml
+  ansible.builtin.import_tasks: fa_vlans_ports__configure.yml
+- name: Include fa_certificates__install.yml
+  ansible.builtin.import_tasks: fa_certificates__install.yml

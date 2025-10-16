@@ -1,0 +1,12 @@
+
+- name: Apply NFS export policies (fallback via REST)
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/file-systems/{{ item.filesystem }}/nfs/exports"
+    method: POST
+    headers: { "api-token": "{{ fb_token }}", "Content-Type": "application/json" }
+    body_format: json
+    body: { rules: "{{ item.rules | default([]) }}" }
+    status_code: [200,201,204]
+    validate_certs: "{{ fb_validate_certs | default(false) }}"
+  loop: "{{ nfs_policies | default([]) }}"
+  loop_control: { label: "NFS {{ item.filesystem }}" }

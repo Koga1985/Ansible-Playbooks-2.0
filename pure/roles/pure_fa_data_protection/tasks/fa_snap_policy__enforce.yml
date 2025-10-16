@@ -1,0 +1,14 @@
+
+- name: Enforce snapshot schedules on protection groups
+  purestorage.flasharray.purefa_pg:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    pgroup: "{{ item.pgroup }}"
+    state: present
+    snap: true
+    per_hour: "{{ item.schedule.per_hour | default(omit) }}"
+    per_day: "{{ item.schedule.per_day | default(omit) }}"
+    per_week: "{{ item.schedule.per_week | default(omit) }}"
+    per_month: "{{ item.schedule.per_month | default(omit) }}"
+  loop: "{{ snap_policies | default([]) }}"
+  loop_control: { label: "{{ item.pgroup }}" }

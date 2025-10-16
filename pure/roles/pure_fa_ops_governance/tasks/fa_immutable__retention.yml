@@ -1,0 +1,4 @@
+
+- name: Configure immutability (SafeMode) — guarded
+  ansible.builtin.debug:
+    msg: "SafeMode often requires support; requested settings: {{ immutability | default({}) }}"

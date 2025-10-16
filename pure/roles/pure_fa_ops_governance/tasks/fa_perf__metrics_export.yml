@@ -1,0 +1,12 @@
+
+- name: Collect performance metrics (array or volumes)
+  purestorage.flasharray.purefa_info:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    gather_subset: "{{ ['array'] if perf.scope | default('array') == 'array' else ['volumes'] }}"
+  register: fa_perf
+- name: Write JSON metrics
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/pure-artifacts') }}/perf_{{ perf.scope | default('array') }}.json"
+    mode: "0644"
+    content: "{{ fa_perf | to_nice_json }}"

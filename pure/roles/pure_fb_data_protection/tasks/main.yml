@@ -1,0 +1,5 @@
+---
+- name: Include fb_snap__policy.yml
+  ansible.builtin.import_tasks: fb_snap__policy.yml
+- name: Include fb_replication__policy.yml
+  ansible.builtin.import_tasks: fb_replication__policy.yml

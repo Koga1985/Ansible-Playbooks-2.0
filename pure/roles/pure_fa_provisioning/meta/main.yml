@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: your-name
+  description: Production roles for Pure Storage on-prem (FlashArray/FlashBlade)
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: GenericLinux
+      versions: ["all"]
+dependencies: []

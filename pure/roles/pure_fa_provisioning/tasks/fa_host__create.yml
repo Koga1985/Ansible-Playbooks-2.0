@@ -1,0 +1,14 @@
+
+- name: Create or update hosts
+  purestorage.flasharray.purefa_host:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    host: "{{ item.name }}"
+    iqnlist: "{{ item.iqnlist | default(omit) }}"
+    wwnlist: "{{ item.wwnlist | default(omit) }}"
+    personality: "{{ item.personality | default(omit) }}"
+    chap_username: "{{ item.chap_username | default(omit) }}"
+    chap_password: "{{ item.chap_password | default(omit) }}"
+    state: present
+  loop: "{{ hosts | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

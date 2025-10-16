@@ -1,0 +1,16 @@
+
+- name: Configure email alerts (fallback via REST)
+  ansible.builtin.uri:
+    url: "https://{{ fa_url }}/api/1.0/array/alert"
+    method: POST
+    headers:
+      api-token: "{{ api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      enabled: "{{ alerts.email.enabled | default(true) }}"
+      recipients: "{{ alerts.email.recipients | default([]) }}"
+      sender_domain: "{{ alerts.email.sender_domain | default(omit) }}"
+      relay_host: "{{ alerts.email.relay_host | default(omit) }}"
+    status_code: [200, 201, 204]
+    validate_certs: "{{ validate_certs | default(false) }}"

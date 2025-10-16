@@ -1,0 +1,30 @@
+
+- name: Configure filesystem replication (fallback via REST)
+  when: item.type | lower == 'filesystem'
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/file-systems/{{ item.name }}/replication"
+    method: POST
+    headers: { "api-token": "{{ fb_token }}", "Content-Type": "application/json" }
+    body_format: json
+    body:
+      target: "{{ item.target }}"
+      rpo: "{{ item.rpo | default(omit) }}"
+      pause: "{{ item.pause | default(omit) }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ fb_validate_certs | default(false) }}"
+  loop: "{{ replication | default([]) }}"
+  loop_control: { label: "FS repl {{ item.name }}" }
+- name: Configure bucket replication (fallback via REST)
+  when: item.type | lower == 'bucket'
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/object-store/buckets/{{ item.name }}/replication"
+    method: POST
+    headers: { "api-token": "{{ fb_token }}", "Content-Type": "application/json" }
+    body_format: json
+    body:
+      target: "{{ item.target }}"
+      schedule: "{{ item.schedule | default(omit) }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ fb_validate_certs | default(false) }}"
+  loop: "{{ replication | default([]) }}"
+  loop_control: { label: "Bucket repl {{ item.name }}" }

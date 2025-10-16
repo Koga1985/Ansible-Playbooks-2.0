@@ -1,0 +1,12 @@
+
+- name: Create/Update local users (fallback via REST)
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/admin/users"
+    method: POST
+    headers: { api-token: "{{ fb_token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ fb_validate_certs | default(false) }}"
+  loop: "{{ users | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

@@ -1,0 +1,11 @@
+
+- name: Install HTTPS certificate bundle
+  when: cert_bundle is defined and cert_bundle|length>0
+  purestorage.flasharray.purefa_certificate:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    certificate: "{{ cert_bundle.cert }}"
+    private_key: "{{ cert_bundle.key }}"
+    ca_bundle: "{{ cert_bundle.chain | default(omit) }}"
+    common_name: "{{ cert_bundle.common_name | default(omit) }}"
+    state: present

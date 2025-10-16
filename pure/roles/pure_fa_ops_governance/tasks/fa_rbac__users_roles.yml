@@ -1,0 +1,12 @@
+
+- name: Create/Update local users
+  ansible.builtin.uri:
+    url: "https://{{ fa_url }}/api/1.0/admin/users"
+    method: POST
+    headers: { api-token: "{{ api_token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ validate_certs | default(false) }}"
+  loop: "{{ users | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

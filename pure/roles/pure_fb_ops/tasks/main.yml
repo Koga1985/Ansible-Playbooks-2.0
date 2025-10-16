@@ -1,0 +1,11 @@
+---
+- name: Include fb_alerts__email_syslog.yml
+  ansible.builtin.import_tasks: fb_alerts__email_syslog.yml
+- name: Include fb_perf__metrics_export.yml
+  ansible.builtin.import_tasks: fb_perf__metrics_export.yml
+- name: Include fb_support__bundle_collect.yml
+  ansible.builtin.import_tasks: fb_support__bundle_collect.yml
+- name: Include fb_rbac__users_roles.yml
+  ansible.builtin.import_tasks: fb_rbac__users_roles.yml
+- name: Include fb_upgrade__purity_non_disruptive.yml
+  ansible.builtin.import_tasks: fb_upgrade__purity_non_disruptive.yml

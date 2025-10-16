@@ -1,0 +1,11 @@
+
+- name: Create/Stretch pods for ActiveCluster
+  purestorage.flasharray.purefa_pod:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    pod: "{{ item.name }}"
+    target: "{{ item.target | default(omit) }}"
+    stretch: true
+    state: present
+  loop: "{{ ac_pods | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

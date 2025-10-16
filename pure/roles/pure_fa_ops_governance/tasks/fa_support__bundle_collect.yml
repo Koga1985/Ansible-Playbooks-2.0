@@ -1,0 +1,23 @@
+
+- name: Ensure artifacts dir
+  ansible.builtin.file: { path: "{{ artifacts_dir | default('/tmp/pure-artifacts') }}", state: directory, mode: "0755" }
+- name: Request support bundle generation
+  ansible.builtin.uri:
+    url: "https://{{ fa_url }}/api/1.0/support/bundle"
+    method: POST
+    headers: { api-token: "{{ api_token }}", Content-Type: "application/json" }
+    body_format: json
+    body: { level: "full" }
+    status_code: [200,202]
+    validate_certs: "{{ validate_certs | default(false) }}"
+  register: _bundle_req
+- name: Download support bundle (poll until available)
+  ansible.builtin.get_url:
+    url: "https://{{ fa_url }}/api/1.0/support/bundle/{{ _bundle_req.json.id | default('latest') }}"
+    headers: { api-token: "{{ api_token }}" }
+    dest: "{{ artifacts_dir | default('/tmp/pure-artifacts') }}/support_bundle.tgz"
+    validate_certs: "{{ validate_certs | default(false) }}"
+  register: _bundle_dl
+  until: _bundle_dl is succeeded
+  retries: 10
+  delay: 15

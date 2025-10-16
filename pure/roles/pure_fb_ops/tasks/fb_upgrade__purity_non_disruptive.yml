@@ -1,0 +1,18 @@
+
+- name: Gather array health (fallback via REST)
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/array/health"
+    method: GET
+    headers: { api-token: "{{ fb_token }}" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ fb_validate_certs | default(false) }}"
+  register: fb_health
+- name: Guardrail — abort if any component unhealthy
+  ansible.builtin.fail:
+    msg: "Array health not green; refusing to upgrade"
+  when: fb_health.json.status | lower != 'healthy'
+- name: (Dry run) Show intended upgrade
+  when: upgrade.dry_run | default(true)
+  ansible.builtin.debug:
+    msg: "Would upgrade Purity//FB to {{ upgrade.target_version | default('N/A') }} (current health: {{ fb_health.json.status }})"

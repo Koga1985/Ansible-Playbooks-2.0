@@ -1,0 +1,17 @@
+
+- name: Ensure artifacts dir
+  ansible.builtin.file: { path: "{{ artifacts_dir | default('/tmp/pure-artifacts') }}", state: directory, mode: "0755" }
+- name: Export configuration snapshot (fallback via REST)
+  ansible.builtin.uri:
+    url: "https://{{ fa_url }}/api/1.0/config/export"
+    method: GET
+    headers: { api-token: "{{ api_token }}" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ validate_certs | default(false) }}"
+  register: cfg
+- name: Write config snapshot
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/pure-artifacts') }}/fa_config_export.json"
+    mode: "0600"
+    content: "{{ cfg.content | default('') }}"

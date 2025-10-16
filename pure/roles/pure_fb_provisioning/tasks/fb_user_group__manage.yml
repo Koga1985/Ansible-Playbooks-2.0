@@ -1,0 +1,39 @@
+
+- name: Create/update local users (fallback via REST)
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/admin/users"
+    method: POST
+    headers: { "api-token": "{{ fb_token }}", "Content-Type": "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ fb_validate_certs | default(false) }}"
+  loop: "{{ users | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+- name: Create/update local groups (fallback via REST)
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/admin/groups"
+    method: POST
+    headers: { "api-token": "{{ fb_token }}", "Content-Type": "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ fb_validate_certs | default(false) }}"
+  loop: "{{ groups | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+- name: Configure directory services (AD/LDAP) (fallback via REST)
+  when: dirsvc is defined and dirsvc|length>0
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/admin/dirsvc"
+    method: POST
+    headers: { "api-token": "{{ fb_token }}", "Content-Type": "application/json" }
+    body_format: json
+    body:
+      type: "{{ dirsvc.type }}"
+      base_dn: "{{ dirsvc.base_dn }}"
+      bind_user: "{{ dirsvc.bind_user }}"
+      bind_password: "{{ dirsvc.bind_password }}"
+      servers: "{{ dirsvc.servers }}"
+      use_tls: "{{ dirsvc.use_tls | default(true) }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ fb_validate_certs | default(false) }}"

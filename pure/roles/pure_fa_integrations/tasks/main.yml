@@ -1,0 +1,9 @@
+---
+- name: Include fa_vmware__datastore_create.yml
+  ansible.builtin.import_tasks: fa_vmware__datastore_create.yml
+- name: Include fa_vmware__resignature.yml
+  ansible.builtin.import_tasks: fa_vmware__resignature.yml
+- name: Include fa_k8s__csi_secret_sc.yml
+  ansible.builtin.import_tasks: fa_k8s__csi_secret_sc.yml
+- name: Include fa_k8s__snapshotclass.yml
+  ansible.builtin.import_tasks: fa_k8s__snapshotclass.yml

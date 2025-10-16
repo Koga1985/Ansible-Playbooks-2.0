@@ -1,0 +1,14 @@
+
+- name: Install HTTPS certificate
+  when: certs.https is defined
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/certificates/https"
+    method: POST
+    headers: { "api-token": "{{ fb_token }}" }
+    body_format: form-multipart
+    body:
+      cert: "{{ lookup('ansible.builtin.file', certs.https.cert) }}"
+      key: "{{ lookup('ansible.builtin.file', certs.https.key) }}"
+      chain: "{{ (lookup('ansible.builtin.file', certs.https.chain)) if (certs.https.chain is defined) else omit }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ fb_validate_certs | default(false) }}"

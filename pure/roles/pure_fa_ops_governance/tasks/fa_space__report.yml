@@ -1,0 +1,18 @@
+
+- name: Gather space & savings info
+  purestorage.flasharray.purefa_info:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    gather_subset: [ array, space, volumes ]
+  register: fa_space
+- name: Write space report CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/pure-artifacts') }}/space_report.csv"
+    mode: "0644"
+    content: |
+      data_reduction,thin_savings,capacity_total,capacity_used,volumes
+      {{ fa_space.space_info.data_reduction | default('') }},
+      {{ fa_space.space_info.thin_provisioning | default('') }},
+      {{ fa_space.space_info.total_space | default('') }},
+      {{ fa_space.space_info.total_used | default('') }},
+      {{ (fa_space.volume_info | default([])) | length }}

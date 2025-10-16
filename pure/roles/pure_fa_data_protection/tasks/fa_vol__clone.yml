@@ -1,0 +1,12 @@
+
+- name: Clone volume from snapshot (instant)
+  purestorage.flasharray.purefa_volume:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    name: "{{ item.target_vol }}"
+    source: "{{ item.source_vol }}"
+    snapshot: "{{ item.snapshot | default(omit) }}"
+    overwrite: "{{ item.overwrite | default(false) }}"
+    state: present
+  loop: "{{ clones | default([]) }}"
+  loop_control: { label: "{{ item.source_vol }}@{{ item.snapshot | default('latest') }} -> {{ item.target_vol }}" }

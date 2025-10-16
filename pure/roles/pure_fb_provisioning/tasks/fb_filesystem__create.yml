@@ -1,0 +1,10 @@
+
+- name: Create/resize filesystems
+  purestorage.flashblade.purefb_fs:
+    fb_url: "{{ fb_url }}"
+    api_token: "{{ fb_token }}"
+    name: "{{ item.name }}"
+    size: "{{ item.size | default(omit) }}"
+    state: present
+  loop: "{{ filesystems | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

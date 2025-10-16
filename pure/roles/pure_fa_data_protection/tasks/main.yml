@@ -1,0 +1,17 @@
+---
+- name: Include fa_snap__on_demand.yml
+  ansible.builtin.import_tasks: fa_snap__on_demand.yml
+- name: Include fa_snap_policy__enforce.yml
+  ansible.builtin.import_tasks: fa_snap_policy__enforce.yml
+- name: Include fa_pgroup__create.yml
+  ansible.builtin.import_tasks: fa_pgroup__create.yml
+- name: Include fa_replication__peer_arrays.yml
+  ansible.builtin.import_tasks: fa_replication__peer_arrays.yml
+- name: Include fa_replication__link_pgroups.yml
+  ansible.builtin.import_tasks: fa_replication__link_pgroups.yml
+- name: Include fa_activecluster__configure.yml
+  ansible.builtin.import_tasks: fa_activecluster__configure.yml
+- name: Include fa_activedr__configure.yml
+  ansible.builtin.import_tasks: fa_activedr__configure.yml
+- name: Include fa_vol__clone.yml
+  ansible.builtin.import_tasks: fa_vol__clone.yml

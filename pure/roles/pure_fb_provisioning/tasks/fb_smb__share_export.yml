@@ -1,0 +1,16 @@
+
+- name: Create/Update SMB shares (fallback via REST)
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/file-systems/{{ item.filesystem }}/smb/shares"
+    method: POST
+    headers: { "api-token": "{{ fb_token }}", "Content-Type": "application/json" }
+    body_format: json
+    body:
+      name: "{{ item.name }}"
+      encryption: "{{ item.encryption | default('desired') }}"
+      signing: "{{ item.signing | default('desired') }}"
+      acl: "{{ item.acl_template | default([]) }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ fb_validate_certs | default(false) }}"
+  loop: "{{ smb_shares | default([]) }}"
+  loop_control: { label: "{{ item.filesystem }}:{{ item.name }}" }

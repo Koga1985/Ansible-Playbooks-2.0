@@ -1,0 +1,34 @@
+
+- name: Configure iSCSI network interfaces
+  purestorage.flasharray.purefa_network:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    interface: "{{ item.name }}"
+    address: "{{ item.address }}"
+    gateway: "{{ item.gateway | default(omit) }}"
+    vlan: "{{ item.vlan | default(omit) }}"
+    mtu: "{{ item.mtu | default(omit) }}"
+    services: ["iscsi"]
+    state: present
+  loop: "{{ iscsi | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Configure FC port speed (optional)
+  when: fc is defined
+  purestorage.flasharray.purefa_network:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    fc_wwn: "{{ item.wwn }}"
+    speed: "{{ item.speed | default(omit) }}"
+    services: ["fc"]
+    state: present
+  loop: "{{ fc | default([]) }}"
+  loop_control: { label: "{{ item.wwn }}" }
+
+- name: Toggle NVMe/TCP at array level (optional)
+  when: nvme_tcp is defined and nvme_tcp
+  purestorage.flasharray.purefa_network:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    nvme_tcp: "{{ nvme_tcp.enabled | bool }}"
+    state: present

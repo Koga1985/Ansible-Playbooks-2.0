@@ -1,0 +1,13 @@
+---
+- name: Include fb_filesystem__create.yml
+  ansible.builtin.import_tasks: fb_filesystem__create.yml
+- name: Include fb_bucket__create.yml
+  ansible.builtin.import_tasks: fb_bucket__create.yml
+- name: Include fb_user_group__manage.yml
+  ansible.builtin.import_tasks: fb_user_group__manage.yml
+- name: Include fb_smb__share_export.yml
+  ansible.builtin.import_tasks: fb_smb__share_export.yml
+- name: Include fb_nfs__export_policy.yml
+  ansible.builtin.import_tasks: fb_nfs__export_policy.yml
+- name: Include fb_certificates__install.yml
+  ansible.builtin.import_tasks: fb_certificates__install.yml

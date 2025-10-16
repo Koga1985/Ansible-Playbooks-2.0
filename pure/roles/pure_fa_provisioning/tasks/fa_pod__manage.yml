@@ -1,0 +1,10 @@
+
+- name: Create/Update pods
+  purestorage.flasharray.purefa_pod:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    pod: "{{ item.name }}"
+    target: "{{ item.target | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+  loop: "{{ pods | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

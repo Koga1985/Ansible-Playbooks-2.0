@@ -1,0 +1,11 @@
+
+- name: Set login banner/MOTD
+  when: login_banner | length > 0
+  ansible.builtin.uri:
+    url: "https://{{ fa_url }}/api/1.0/array/banner"
+    method: POST
+    headers: { api-token: "{{ api_token }}", Content-Type: "application/json" }
+    body_format: json
+    body: { banner: "{{ login_banner }}" }
+    status_code: [200,201,204]
+    validate_certs: "{{ validate_certs | default(false) }}"

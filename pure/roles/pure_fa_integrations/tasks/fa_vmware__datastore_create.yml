@@ -1,0 +1,20 @@
+
+- name: Ensure FA volume exists (for VMFS path)
+  when: datastore.type | lower == 'vmfs'
+  purestorage.flasharray.purefa_volume:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    name: "{{ datastore.name }}"
+    size: "{{ datastore.size }}"
+    state: present
+
+- name: Map LUN to host/hostgroup
+  when: datastore.type | lower == 'vmfs'
+  purestorage.flasharray.purefa_connect:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    volume: "{{ datastore.name }}"
+    host: "{{ datastore.host | default(omit) }}"
+    hgroup: "{{ datastore.hostgroup | default(omit) }}"
+    lun: "{{ datastore.lun | default(omit) }}"
+    state: present

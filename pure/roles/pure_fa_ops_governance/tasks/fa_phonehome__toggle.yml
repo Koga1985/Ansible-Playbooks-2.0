@@ -1,0 +1,13 @@
+
+- name: Toggle phone-home (call-home) settings
+  ansible.builtin.uri:
+    url: "https://{{ fa_url }}/api/1.0/array/phonehome"
+    method: POST
+    headers: { api-token: "{{ api_token }}", Content-Type: "application/json" }
+    body_format: json
+    body:
+      enabled: "{{ phonehome.enabled | default(true) }}"
+      proxy: "{{ phonehome.proxy | default(omit) }}"
+      verify_ssl: "{{ phonehome.verify_ssl | default(true) }}"
+    status_code: [200,201,204]
+    validate_certs: "{{ validate_certs | default(false) }}"

@@ -1,0 +1,13 @@
+---
+fb_url: "https://flashblade.example.com"
+fb_token: "{{ lookup('env','PURE_FB_TOKEN') }}"
+fb_validate_certs: false
+artifacts_dir: "/tmp/pure-artifacts"
+filesystems: []
+buckets: []
+users: []
+groups: []
+dirsvc: {}
+smb_shares: []
+nfs_policies: []
+certs: {}

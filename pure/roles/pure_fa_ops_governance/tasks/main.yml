@@ -1,0 +1,21 @@
+---
+- name: Include fa_alerts__email_syslog.yml
+  ansible.builtin.import_tasks: fa_alerts__email_syslog.yml
+- name: Include fa_phonehome__toggle.yml
+  ansible.builtin.import_tasks: fa_phonehome__toggle.yml
+- name: Include fa_support__bundle_collect.yml
+  ansible.builtin.import_tasks: fa_support__bundle_collect.yml
+- name: Include fa_perf__metrics_export.yml
+  ansible.builtin.import_tasks: fa_perf__metrics_export.yml
+- name: Include fa_space__report.yml
+  ansible.builtin.import_tasks: fa_space__report.yml
+- name: Include fa_rbac__users_roles.yml
+  ansible.builtin.import_tasks: fa_rbac__users_roles.yml
+- name: Include fa_banner_login__set.yml
+  ansible.builtin.import_tasks: fa_banner_login__set.yml
+- name: Include fa_immutable__retention.yml
+  ansible.builtin.import_tasks: fa_immutable__retention.yml
+- name: Include fa_upgrade__purity_non_disruptive.yml
+  ansible.builtin.import_tasks: fa_upgrade__purity_non_disruptive.yml
+- name: Include fa_backup__config_export.yml
+  ansible.builtin.import_tasks: fa_backup__config_export.yml

@@ -1,0 +1,11 @@
+
+- name: Create/Update VolumeSnapshotClass
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: snapshot.storage.k8s.io/v1
+      kind: VolumeSnapshotClass
+      metadata:
+        name: "{{ snapshots.snapshotclass_name | default('pure-snapclass') }}"
+      driver: pure-csi
+      deletionPolicy: "{{ snapshots.deletion_policy | default('Delete') }}"

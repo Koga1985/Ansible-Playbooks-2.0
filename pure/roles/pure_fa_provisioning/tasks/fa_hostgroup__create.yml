@@ -1,0 +1,10 @@
+
+- name: Create or update host groups
+  purestorage.flasharray.purefa_hgroup:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    hgroup: "{{ item.name }}"
+    hosts: "{{ item.hosts | default([]) }}"
+    state: present
+  loop: "{{ hostgroups | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

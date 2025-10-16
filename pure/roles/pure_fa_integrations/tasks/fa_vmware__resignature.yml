@@ -1,0 +1,9 @@
+
+- name: Rescan HBAs before resignature
+  community.vmware.vmware_host_scanhba:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    cluster_name: "{{ resignature.cluster | default(vcenter_cluster) }}"
+    esxi_hostname: null

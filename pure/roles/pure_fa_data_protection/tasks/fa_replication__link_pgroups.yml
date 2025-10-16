@@ -1,0 +1,11 @@
+
+- name: Link protection groups for replication
+  purestorage.flasharray.purefa_pg:
+    fa_url: "{{ fa_url }}"
+    api_token: "{{ api_token }}"
+    pgroup: "{{ item.pgroup }}"
+    target: "{{ item.target }}"
+    replicate: true
+    state: present
+  loop: "{{ pg_links | default([]) }}"
+  loop_control: { label: "{{ item.pgroup }} -> {{ item.target }}" }

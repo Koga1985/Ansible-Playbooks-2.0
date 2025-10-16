@@ -1,0 +1,21 @@
+
+- name: Ensure artifacts directory exists
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/pure-artifacts') }}"
+    state: directory
+    mode: "0755"
+- name: Collect performance metrics (fallback via REST per object)
+  ansible.builtin.uri:
+    url: "{{ fb_url }}/api/1.12/metrics/{{ perf.scope }}s/{{ item }}/timeseries"
+    method: GET
+    headers: { api-token: "{{ fb_token }}" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ fb_validate_certs | default(false) }}"
+  loop: "{{ perf.objects | default([]) }}"
+  register: _metrics
+- name: Write metrics JSON (combined)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/pure-artifacts') }}/fb_perf_{{ perf.scope }}.json"
+    mode: "0644"
+    content: "{{ _metrics.results | map(attribute='json') | list | to_nice_json }}"
