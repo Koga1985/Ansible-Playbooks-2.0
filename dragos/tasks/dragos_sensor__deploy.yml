@@ -1,0 +1,13 @@
+---
+# vars: sensors: [ { name: "sensor-1", site: "Plant1", collector_id: "abc123" } ]
+- name: Register sensors
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/sensors"
+    method: POST
+    headers: { Authorization: "Bearer {{ dragos_token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: [200,201]
+    validate_certs: "{{ dragos_verify_ssl | default(true) }}"
+  loop: "{{ sensors | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }

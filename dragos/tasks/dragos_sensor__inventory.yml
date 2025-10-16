@@ -1,0 +1,28 @@
+---
+
+- name: Ensure artifacts directory exists
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/dragos-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: List sensors
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/sensors?limit={{ page_size | default(500) }}"
+    method: GET
+    headers: { Authorization: "Bearer {{ dragos_token }}" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ dragos_verify_ssl | default(true) }}"
+  register: sensors_now
+
+- name: Save sensors CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/dragos-artifacts') }}/sensors.csv"
+    mode: "0644"
+    content: |
+      id,name,version,site,status
+      {% set items = (sensors_now.json.items if sensors_now.json.items is defined else sensors_now.json.data | default([])) %}
+      {% for s in items %}
+      {{ s.id | default('') }},{{ s.name | default('') }},{{ s.version | default('') }},{{ s.site | default('') }},{{ s.status | default('') }}
+      {% endfor %}

@@ -1,0 +1,23 @@
+---
+# vars: jira: { url: "https://jira.example", token: "JIRA_TOKEN", project: "OT" }
+# findings_csv_path: "{{ artifacts_dir }}/vuln_findings.csv"
+- name: Load findings CSV
+  ansible.builtin.set_fact:
+    _lines: "{{ lookup('ansible.builtin.file', findings_csv_path) | splitlines }}"
+
+- name: Create Jira issues with labels
+  ansible.builtin.uri:
+    url: "{{ jira.url }}/rest/api/2/issue"
+    method: POST
+    headers: { Authorization: "Bearer {{ jira.token }}", Content-Type: "application/json" }
+    body_format: json
+    body:
+      fields:
+        project: { key: "{{ jira.project }}" }
+        summary: "Remediate vuln {{ item.split(',')[0] }} on {{ item.split(',')[1] }}"
+        issuetype: { name: "Task" }
+        labels: [ "dragos", "vuln", "{{ item.split(',')[4] | default('') }}" ]
+        priority: { name: "{{ 'Highest' if (item.split(',')[2] | float) >= 9.0 else ('High' if (item.split(',')[2] | float) >= 7.0 else 'Medium') }}" }
+        description: "Risk={{ item.split(',')[3] | default('') }}"
+    status_code: [200,201]
+  loop: "{{ _lines[1:] }}"

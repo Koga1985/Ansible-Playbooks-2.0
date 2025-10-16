@@ -1,0 +1,10 @@
+---
+# vars: tenants: [ { name: "plant1", base_url: "...", token: "..." } ]
+# action_task: "dragos_assets__export_full.yml"
+- name: Iterate tenants (switch creds per-run)
+  ansible.builtin.include_tasks: "{{ action_task }}"
+  loop: "{{ tenants }}"
+  loop_control: { loop_var: tenant }
+  vars:
+    dragos_base_url: "{{ tenant.base_url }}"
+    dragos_token: "{{ tenant.token }}"

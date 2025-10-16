@@ -1,0 +1,18 @@
+---
+# vars: soar: { url: "https://soar.example/enrich", token: "XXX" }
+# assets_json_path: "{{ artifacts_dir }}/assets_full.json"
+- name: Load assets JSON
+  ansible.builtin.set_fact:
+    _assets: "{{ lookup('ansible.builtin.file', assets_json_path) | from_json }}"
+
+- name: Push enrichment to SOAR
+  ansible.builtin.uri:
+    url: "{{ soar.url }}"
+    method: POST
+    headers: { Authorization: "Bearer {{ soar.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: [200,201,202,204]
+    validate_certs: true
+  loop: "{{ (_assets.items if _assets.items is defined else _assets.data | default([])) }}"
+  loop_control: { label: "{{ item.id | default('') }}" }

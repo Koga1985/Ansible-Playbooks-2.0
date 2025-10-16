@@ -1,0 +1,33 @@
+---
+# vars: splunk: { hec_url: "https://splunk:8088/services/collector", hec_token: "xxx", sourcetype: "dragos:event", batch_size: 200 }
+# alerts_json_path: "{{ artifacts_dir }}/alerts_filtered.json"
+- name: Load alerts
+  ansible.builtin.set_fact:
+    _alerts: "{{ lookup('ansible.builtin.file', alerts_json_path) | from_json }}"
+    _batch_size: "{{ splunk.batch_size | default(200) | int }}"
+
+- name: Prepare alert list
+  ansible.builtin.set_fact:
+    _items: "{{ (_alerts.items if _alerts.items is defined else _alerts.data | default([])) }}"
+
+- name: Send to Splunk HEC in batches
+  vars:
+    batch: "{{ _items[batch_start:batch_end] }}"
+  loop: "{{ range(0, (_items | length), _batch_size) | list }}"
+  loop_control:
+    loop_var: batch_start
+  vars_prompt:
+    # (not used, keep clean)
+  tasks:
+    - name: Calc end index
+      ansible.builtin.set_fact:
+        batch_end: "{{ [batch_start + _batch_size, (_items | length)] | min }}"
+    - name: Post batch
+      ansible.builtin.uri:
+        url: "{{ splunk.hec_url }}"
+        method: POST
+        headers: { Authorization: "Splunk {{ splunk.hec_token }}", Content-Type: "application/json" }
+        body_format: json
+        body: >
+          { "event": {{ batch }}, "sourcetype": "{{ splunk.sourcetype | default('dragos:event') }}" }
+        status_code: [200,201]
