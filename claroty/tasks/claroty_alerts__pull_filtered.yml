@@ -1,0 +1,30 @@
+---
+# Prereqs (group_vars/claroty.yml):
+#   claroty:
+#     base_url: "https://xdome.<tenant>.claroty.cloud/api"
+#     token: "{{ lookup('env','CLAROTY_TOKEN') }}"
+#     verify_ssl: true
+
+- name: Pull filtered alerts
+  uri:
+    url: "{{ claroty.base_url }}/v1/alerts/search"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ alert_filter | default({'severity':['high','critical'],'since':'24h'}) }}"
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: alerts
+
+- name: Write alerts CSV
+  copy:
+    dest: "{{ artifacts_dir | default('/tmp/claroty-artifacts') }}/alerts.csv"
+    mode: "0644"
+    content: |
+      id,severity,category,asset,site,detected_at,status
+      {% for a in alerts.json.items | default([]) %}
+      {{ a.id | default('') }},{{ a.severity | default('') }},{{ a.category | default('') }},
+      {{ a.asset.name | default('') }},{{ a.asset.site.name | default('') }},
+      {{ a.detectedAt | default('') }},{{ a.status | default('') }}
+      {% endfor %}

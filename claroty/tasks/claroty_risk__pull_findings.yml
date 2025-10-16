@@ -1,0 +1,30 @@
+---
+# Prereqs (group_vars/claroty.yml):
+#   claroty:
+#     base_url: "https://xdome.<tenant>.claroty.cloud/api"
+#     token: "{{ lookup('env','CLAROTY_TOKEN') }}"
+#     verify_ssl: true
+
+- name: Pull open risks
+  uri:
+    url: "{{ claroty.base_url }}/v1/risks/search"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ risk_filter | default({'status':['open']}) }}"
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: risks
+
+- name: Write risks CSV
+  copy:
+    dest: "{{ artifacts_dir | default('/tmp/claroty-artifacts') }}/risks.csv"
+    mode: "0644"
+    content: |
+      id,asset,site,type,cve,cvss,risk,exploit,status
+      {% for r in risks.json.items | default([]) %}
+      {{ r.id | default('') }},{{ r.asset.name | default('') }},{{ r.asset.site.name | default('') }},
+      {{ r.asset.type | default('') }},{{ r.cve | default('') }},{{ r.cvss | default('') }},
+      {{ r.riskScore | default('') }},{{ r.exploitability | default('') }},{{ r.status | default('') }}
+      {% endfor %}

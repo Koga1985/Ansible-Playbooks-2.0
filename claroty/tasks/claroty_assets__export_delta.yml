@@ -1,0 +1,33 @@
+---
+# Prereqs (group_vars/claroty.yml):
+#   claroty:
+#     base_url: "https://xdome.<tenant>.claroty.cloud/api"
+#     token: "{{ lookup('env','CLAROTY_TOKEN') }}"
+#     verify_ssl: true
+
+- name: Read last-run marker if present
+  slurp: { src: "{{ artifacts_dir | default('/tmp/claroty-artifacts') }}/last_run.txt" }
+  register: _marker
+  ignore_errors: true
+
+- name: Determine updatedSince
+  set_fact:
+    updated_since: "{{ (_marker.content | b64decode | trim) if (_marker is defined and _marker.content is defined) else delta_since | default(omit) }}"
+
+- name: Export delta assets
+  uri:
+    url: "{{ claroty.base_url }}/v1/assets/search"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ {'updatedSince': updated_since} if updated_since is defined else {} }}"
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: assets
+
+- name: Update last-run marker
+  copy:
+    dest: "{{ artifacts_dir | default('/tmp/claroty-artifacts') }}/last_run.txt"
+    mode: "0644"
+    content: "{{ lookup('ansible.builtin.pipe','date -u +%Y-%m-%dT%H:%M:%SZ') }}"

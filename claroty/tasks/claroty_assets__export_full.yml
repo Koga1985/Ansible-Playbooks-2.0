@@ -1,0 +1,27 @@
+---
+# Prereqs (group_vars/claroty.yml):
+#   claroty:
+#     base_url: "https://xdome.<tenant>.claroty.cloud/api"
+#     token: "{{ lookup('env','CLAROTY_TOKEN') }}"
+#     verify_ssl: true
+
+- name: Export full asset inventory
+  uri:
+    url: "{{ claroty.base_url }}/v1/assets/search"
+    method: POST
+    headers: { Authorization: "Bearer {{ claroty.token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ export_filter | default({}) }}"
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ claroty.verify_ssl | default(true) }}"
+  register: assets
+
+- name: Ensure artifacts_dir exists
+  file: { path: "{{ artifacts_dir | default('/tmp/claroty-artifacts') }}", state: directory, mode: "0755" }
+
+- name: Write JSON
+  copy:
+    dest: "{{ artifacts_dir | default('/tmp/claroty-artifacts') }}/xdome_assets.json"
+    mode: "0644"
+    content: "{{ assets.json.items | default([]) | to_nice_json }}"
