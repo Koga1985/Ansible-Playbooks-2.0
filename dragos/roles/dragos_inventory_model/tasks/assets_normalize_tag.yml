@@ -1,0 +1,26 @@
+
+---
+- name: Load assets
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/assets?limit={{ page_size }}"
+    method: GET
+    headers: { Authorization: "Bearer {{ dragos_token }}" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ dragos_verify_ssl }}"
+  register: assets_now
+
+- name: Apply tags to matching assets (guarded)
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/assets/{{ item.id }}"
+    method: PATCH
+    headers: { Authorization: "Bearer {{ dragos_token }}", Content-Type: "application/json" }
+    body_format: json
+    body: { tags: "{{ plan.set | default({}) }}" }
+    status_code: [200,204]
+    validate_certs: "{{ dragos_verify_ssl }}"
+  vars:
+    plan: "{{ (tags_desired | selectattr('match.site','equalto', item.site | default('')) | list | first) | default({}) }}"
+  loop: "{{ (assets_now.json.items if assets_now.json.items is defined else assets_now.json.data | default([])) }}"
+  loop_control: { label: "{{ item.id }}" }
+  when: not (dry_run | default(true)) and (plan.set is defined)

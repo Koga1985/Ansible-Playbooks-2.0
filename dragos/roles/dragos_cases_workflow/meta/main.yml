@@ -1,0 +1,9 @@
+
+---
+galaxy_info:
+  role_name: dragos_cases_workflow
+  author: automation
+  description: Turn alerts into cases, attach evidence, and reconcile statuses with ITSM.
+  license: MIT
+  min_ansible_version: "2.12"
+dependencies: []

@@ -1,0 +1,23 @@
+
+---
+- name: Load assets for CMDB
+  ansible.builtin.set_fact:
+    _assets: "{{ (lookup('ansible.builtin.file', artifacts_dir + '/assets_full.json') | from_json) if (lookup('ansible.builtin.file', artifacts_dir + '/assets_full.json', errors='ignore')) else {} }}"
+
+- name: Upsert to ServiceNow
+  when: cmdb.provider | lower == 'servicenow'
+  ansible.builtin.uri:
+    url: "{{ cmdb.url }}/api/now/table/{{ cmdb.table }}"
+    method: POST
+    headers: { Authorization: "Bearer {{ cmdb.token }}", Content-Type: "application/json" }
+    body_format: json
+    body:
+      name: "{{ item.hostname | default(item.name) }}"
+      ip_address: "{{ item.primary_ip | default(item.ip) }}"
+      u_site: "{{ item.site | default('') }}"
+      u_zone: "{{ item.zone | default('') }}"
+      u_vendor: "{{ item.vendor | default('') }}"
+      u_model: "{{ item.model | default('') }}"
+    status_code: [200,201]
+  loop: "{{ (_assets.items if _assets.items is defined else _assets.data | default([])) }}"
+  loop_control: { label: "{{ item.id | default('') }}" }

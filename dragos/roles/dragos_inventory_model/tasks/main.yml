@@ -1,0 +1,16 @@
+---
+
+- name: Ensure artifacts directory exists
+  ansible.builtin.file:
+    path: "{{ artifacts_dir }}"
+    state: directory
+    mode: "0755"
+
+- include_tasks: assets_export_full.yml
+- when: delta_since_iso is defined
+  include_tasks: assets_export_delta.yml
+- when: tags_desired | length > 0
+  include_tasks: assets_normalize_tag.yml
+- when: cmdb is defined and (cmdb | length) > 0
+  include_tasks: assets_cmdb_sync.yml
+- include_tasks: assets_coverage_report.yml

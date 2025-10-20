@@ -1,0 +1,17 @@
+
+---
+- name: Export asset changes since marker
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/assets?updated_after={{ delta_since_iso }}&limit={{ page_size }}"
+    method: GET
+    headers: { Authorization: "Bearer {{ dragos_token }}" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ dragos_verify_ssl }}"
+  register: assets_delta
+
+- name: Save delta JSON
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/assets_delta.json"
+    mode: "0644"
+    content: "{{ assets_delta.content }}"

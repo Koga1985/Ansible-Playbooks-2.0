@@ -1,0 +1,39 @@
+
+---
+- name: Load open cases
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/cases?status=open"
+    method: GET
+    headers: { Authorization: "Bearer {{ dragos_token }}" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ dragos_verify_ssl }}"
+  register: cases_open
+
+- name: Build external id list (assumes case.external_id field)
+  ansible.builtin.set_fact:
+    _ext_ids: "{{ (cases_open.json.items if cases_open.json.items is defined else cases_open.json.data | default([])) | map(attribute='external_id') | list | select('string') | list }}"
+
+- name: Fetch ServiceNow states (example)
+  when: external.provider | lower == 'servicenow' and _ext_ids | length > 0
+  ansible.builtin.uri:
+    url: "{{ external.url }}/api/now/table/incident?sysparm_query=numberIN{{ _ext_ids | join(',') }}&sysparm_fields=number,state"
+    method: GET
+    headers: { Authorization: "Bearer {{ external.token }}" }
+    return_content: true
+    status_code: 200
+  register: snow_inc
+
+- name: Fetch Jira states (example)
+  when: external.provider | lower == 'jira' and _ext_ids | length > 0
+  ansible.builtin.uri:
+    url: "{{ external.jira_url }}/rest/api/2/search?jql=issuekey%20in%20({{ _ext_ids | join(',') }})&fields=status"
+    method: GET
+    headers: { Authorization: "Bearer {{ external.jira_token }}" }
+    return_content: true
+    status_code: 200
+  register: jira_iss
+
+- name: (Scaffold) Map external statuses to Dragos case PATCH
+  ansible.builtin.debug:
+    msg: "Implement PATCH /api/cases/<id> status=closed when external status in mapping.closed_states"

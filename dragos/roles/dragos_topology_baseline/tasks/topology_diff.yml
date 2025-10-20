@@ -1,0 +1,32 @@
+
+---
+- name: Read current & gold
+  ansible.builtin.set_fact:
+    _now: "{{ lookup('ansible.builtin.file', artifacts_dir + '/topology.json') | from_json }}"
+    _gold: "{{ lookup('ansible.builtin.file', topology_gold_path) | from_json }}"
+
+- name: Compute drift (added/removed edges)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/topology_drift.json"
+    mode: "0644"
+    content: |
+      {{
+        {{
+          'added': (
+            (_now.items if _now.items is defined else _now.data | default([]))
+            | map('extract', {{'src':'src','dst':'dst','proto':'proto','port':'port'}}) | list
+          )
+          | difference(
+            (_gold.items if _gold.items is defined else _gold.data | default([]))
+            | map('extract', {{'src':'src','dst':'dst','proto':'proto','port':'port'}}) | list
+          ),
+          'removed': (
+            (_gold.items if _gold.items is defined else _gold.data | default([]))
+            | map('extract', {{'src':'src','dst':'dst','proto':'proto','port':'port'}}) | list
+          )
+          | difference(
+            (_now.items if _now.items is defined else _now.data | default([]))
+            | map('extract', {{'src':'src','dst':'dst','proto':'proto','port':'port'}}) | list
+          )
+        }} | to_nice_json
+      }}

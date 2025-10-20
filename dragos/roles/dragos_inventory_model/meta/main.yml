@@ -1,0 +1,9 @@
+
+---
+galaxy_info:
+  role_name: dragos_inventory_model
+  author: automation
+  description: Authoritative Dragos asset inventory pipelines (full/delta), tagging, CMDB sync, coverage.
+  license: MIT
+  min_ansible_version: "2.12"
+dependencies: []

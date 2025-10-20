@@ -1,0 +1,27 @@
+
+---
+- name: Load alerts
+  ansible.builtin.set_fact:
+    _alerts: "{{ (lookup('ansible.builtin.file', artifacts_dir + '/alerts_filtered.json') | from_json) }}"
+
+- name: Build dedupe key (simple composite)
+  ansible.builtin.set_fact:
+    _dedupe_map: "{{ _dedupe_map | default({}) | combine({ (item.id | string): (item.site | default('')) ~ ':' ~ (item.asset.ip | default('')) ~ ':' ~ (item.category | default('')) }) }}"
+  loop: "{{ (_alerts.items if _alerts.items is defined else _alerts.data | default([])) }}"
+  loop_control: { label: "{{ item.id }}" }
+
+- name: Open cases for alerts (dedup by composite key)
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/cases"
+    method: POST
+    headers: { Authorization: "Bearer {{ dragos_token }}", Content-Type: "application/json" }
+    body_format: json
+    body:
+      title: "Alert {{ item.id }} — {{ item.summary | default('') }}"
+      alert_id: "{{ item.id }}"
+      owner: "{{ assign.owner | default('') }}"
+      dedupe_key: "{{ _dedupe_map[item.id | string] | default(item.id) }}"
+    status_code: [200,201,202]
+    validate_certs: "{{ dragos_verify_ssl }}"
+  loop: "{{ (_alerts.items if _alerts.items is defined else _alerts.data | default([])) }}"
+  loop_control: { label: "{{ item.id }}" }

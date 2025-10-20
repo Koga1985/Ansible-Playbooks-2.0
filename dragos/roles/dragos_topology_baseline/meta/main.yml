@@ -1,0 +1,9 @@
+
+---
+galaxy_info:
+  role_name: dragos_topology_baseline
+  author: automation
+  description: Export observed flows/topology and compare to a golden baseline.
+  license: MIT
+  min_ansible_version: "2.12"
+dependencies: []

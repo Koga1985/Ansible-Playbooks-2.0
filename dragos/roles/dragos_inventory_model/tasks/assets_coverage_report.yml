@@ -1,0 +1,18 @@
+
+---
+- name: Load assets snapshot
+  ansible.builtin.set_fact:
+    _assets: "{{ (lookup('ansible.builtin.file', artifacts_dir + '/assets_full.json') | from_json) if (lookup('ansible.builtin.file', artifacts_dir + '/assets_full.json', errors='ignore')) else {} }}"
+
+- name: Save coverage CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/coverage_report.csv"
+    mode: "0644"
+    content: |
+      site,type,count
+      {% set items = (_assets.items if _assets.items is defined else _assets.data | default([])) %}
+      {% for s in (items | map(attribute='site') | list | unique) %}
+      {% for t in (items | map(attribute='type') | list | unique) %}
+      {{ s | default('') }},{{ t | default('') }},{{ (items | selectattr('site','equalto',s) | selectattr('type','equalto',t) | list | length) }}
+      {% endfor %}
+      {% endfor %}

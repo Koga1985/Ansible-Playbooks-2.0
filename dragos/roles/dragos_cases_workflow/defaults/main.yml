@@ -1,0 +1,16 @@
+---
+
+dragos_base_url: "https://tenant.dragos.com"
+dragos_token: "{{ lookup('env','DRAGOS_TOKEN') }}"
+dragos_verify_ssl: true
+page_size: 500
+artifacts_dir: "/tmp/dragos-artifacts"
+dry_run: true
+
+assign: {"owner": "ot-team", "dedupe_keys": ["site","asset.ip","category"]}
+external: {
+  "provider": "servicenow",
+  "url": "https://now.example",
+  "token": "{{ lookup('env','SNOW_TOKEN') }}",
+  "mapping": {"closed_states": ["Resolved","Closed","Done"], "in_progress_states": ["In Progress"]}
+}

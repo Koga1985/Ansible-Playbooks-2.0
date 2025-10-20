@@ -1,0 +1,12 @@
+---
+
+- name: Ensure artifacts directory exists
+  ansible.builtin.file:
+    path: "{{ artifacts_dir }}"
+    state: directory
+    mode: "0755"
+
+- include_tasks: cases_create_from_alerts.yml
+- when: artifacts is defined and (artifacts | length) > 0
+  include_tasks: cases_attach_artifacts.yml
+- include_tasks: cases_status_sync.yml
