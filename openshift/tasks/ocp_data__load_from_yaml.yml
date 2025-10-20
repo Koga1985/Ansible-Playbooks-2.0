@@ -1,0 +1,26 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert input file(s) provided
+  ansible.builtin.assert:
+    that:
+      - data_files is defined
+      - data_files | length > 0
+    fail_msg: "Provide data_files list of YAMLs to load."
+
+- name: Load YAML inputs
+  ansible.builtin.set_fact:
+    loaded_data: "{{ (loaded_data | default([])) + [ lookup('file', item) | from_yaml ] }}"
+  loop: "{{ data_files }}"
+  loop_control: { label: "{{ item }}" }
+
+- name: Optional schema validation (basic required keys)
+  when: required_keys is defined and (required_keys | length > 0)
+  ansible.builtin.assert:
+    that: "{{ item | dict2items | map(attribute='key') | list is superset(required_keys) }}"
+    fail_msg: "One or more required keys missing in loaded_data item."
+  loop: "{{ loaded_data | default([]) }}"

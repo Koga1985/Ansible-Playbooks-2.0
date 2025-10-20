@@ -1,0 +1,34 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Gather ClusterOperators
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    api_version: config.openshift.io/v1
+    kind: ClusterOperator
+  register: _cos
+
+- name: Fail if any ClusterOperator not Available=True
+  ansible.builtin.assert:
+    that:
+      - (_cos.resources | selectattr('status.conditions','defined') | selectattr('status.conditions','select','attr','type','==','Available') ) is not defined
+    quiet: true
+  failed_when: >
+    (_cos.resources |
+     selectattr('status.conditions','defined') |
+     map(attribute='status.conditions') |
+     select('selectattr','type','equalto','Available') |
+     map('last') |
+     selectattr('status','ne','True') | list) | length > 0
+  success_msg: "All ClusterOperators report Available=True"
+  fail_msg: "Some ClusterOperators are not Available=True; check 'oc get co' before upgrade."
+
+- name: Export ClusterOperators to artifacts (debug)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/ocp-artifacts') }}/clusteroperators.json"
+    mode: "0644"
+    content: "{{ _cos.resources | to_nice_json }}"

@@ -1,0 +1,32 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert project_request_template provided
+  ansible.builtin.assert:
+    that:
+      - project_request_template is defined
+      - project_request_template | length > 0
+    fail_msg: "Provide project_request_template (Template in openshift-config)."
+
+- name: Apply ProjectRequest template
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ project_request_template }}"
+  register: _prt
+
+- name: Configure cluster to use the ProjectRequest template
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition:
+      apiVersion: config.openshift.io/v1
+      kind: Project
+      metadata: { name: cluster }
+      spec:
+        projectRequestTemplate:
+          name: "{{ project_request_template.metadata.name }}"

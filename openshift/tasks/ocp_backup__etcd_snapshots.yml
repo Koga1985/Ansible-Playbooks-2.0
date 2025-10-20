@@ -1,0 +1,19 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert etcd backup config provided
+  ansible.builtin.assert:
+    that:
+      - etcd_backup_cronjob is defined
+      - etcd_backup_cronjob | length > 0
+    fail_msg: "Provide etcd_backup_cronjob (CronJob to run etcdctl snapshots to secure storage)."
+
+- name: Apply etcd snapshot CronJob
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ etcd_backup_cronjob }}"

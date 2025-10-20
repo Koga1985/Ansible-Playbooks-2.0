@@ -1,0 +1,14 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Ensure artifacts directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ artifacts_dirs | default([artifacts_dir | default('/tmp/ocp-artifacts')]) }}"
+  loop_control: { label: "{{ item }}" }

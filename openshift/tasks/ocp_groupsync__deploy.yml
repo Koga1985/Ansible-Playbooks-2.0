@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert group sync manifests provided
+  ansible.builtin.assert:
+    that:
+      - group_sync_manifests is defined
+      - group_sync_manifests | length > 0
+    fail_msg: "Provide group_sync_manifests (Secret/CM/Deployment/CronJob)."
+
+- name: Apply group sync manifests (LDAP/AD → OCP groups)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ group_sync_manifests }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

@@ -1,0 +1,40 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert export targets provided
+  ansible.builtin.assert:
+    that:
+      - export_targets is defined
+      - export_targets | length > 0
+    fail_msg: "Provide export_targets: [ { kind, namespace?, labels? } ]."
+
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ocp-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Collect resources for export
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    kind: "{{ item.kind }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+    label_selectors: "{{ item.labels | default(omit) }}"
+  loop: "{{ export_targets }}"
+  register: _exp
+
+- name: Write CSV report
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/ocp-artifacts') }}/resources_export.csv"
+    mode: "0644"
+    content: |
+      kind,namespace,name,labels,resource_version
+      {% for r in _exp.results %}
+      {% for obj in r.resources | default([]) %}
+      {{ obj.kind }},{{ obj.metadata.namespace | default('') }},{{ obj.metadata.name }},{{ obj.metadata.labels | default({}) | to_json }},{{ obj.metadata.resourceVersion }}
+      {% endfor %}
+      {% endfor %}

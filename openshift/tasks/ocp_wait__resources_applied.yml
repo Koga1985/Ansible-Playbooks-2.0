@@ -1,0 +1,28 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Wait for resources to meet conditions
+  vars:
+    obj: "{{ item }}"
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    api_version: "{{ obj.apiVersion | default(omit) }}"
+    kind: "{{ obj.kind }}"
+    namespace: "{{ obj.metadata.namespace | default(omit) }}"
+    name: "{{ obj.metadata.name | default(omit) }}"
+    label_selectors: "{{ obj.selector | default(omit) }}"
+  register: _res
+  retries: "{{ retries | default(30) }}"
+  delay: "{{ delay | default(10) }}"
+  until: >
+    (_res.resources | length) > 0
+    and ( wait_condition is not defined
+          or (_res.resources[0].status.conditions | selectattr('type','equalto', wait_condition.type) | list | length > 0
+              and (_res.resources[0].status.conditions | selectattr('type','equalto', wait_condition.type) | map(attribute='status') | list | first) == wait_condition.status )
+        )
+  loop: "{{ wait_targets | default([]) }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name | default('') }}" }

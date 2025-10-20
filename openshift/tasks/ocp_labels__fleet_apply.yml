@@ -1,0 +1,28 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert label_targets provided
+  ansible.builtin.assert:
+    that:
+      - label_targets is defined
+      - label_targets | length > 0
+    fail_msg: "Provide label_targets: [ { kind, name, namespace?, labels, annotations? } ]."
+
+- name: Apply labels/annotations fleetwide
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: patched
+    definition:
+      apiVersion: v1
+      kind: "{{ item.kind }}"
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ item.namespace | default(omit) }}"
+        labels: "{{ item.labels | default({}) }}"
+        annotations: "{{ item.annotations | default({}) }}"
+  loop: "{{ label_targets }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.namespace | default('') }}:{{ item.name }}" }

@@ -1,0 +1,26 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert oauth_config provided
+  ansible.builtin.assert:
+    that:
+      - oauth_config is defined
+      - oauth_config | length > 0
+    fail_msg: "Provide oauth_config (OAuth/cluster CR)."
+
+- name: Apply OAuth providers (GitHub/LDAP/SAML/OIDC)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ oauth_config }}"
+
+- name: Apply Authentication token/session settings (optional)
+  when: auth_config is defined and (auth_config | length > 0)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ auth_config }}"

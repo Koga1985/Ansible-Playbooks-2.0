@@ -1,0 +1,38 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert report_targets provided
+  ansible.builtin.assert:
+    that:
+      - report_targets is defined
+      - report_targets | length > 0
+    fail_msg: "Provide report_targets: [ { kind, namespace?, name? } ]."
+
+- name: Ensure artifacts directory
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ocp-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Collect current objects
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    kind: "{{ item.kind }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+    name: "{{ item.name | default(omit) }}"
+  loop: "{{ report_targets }}"
+  register: _live
+
+- name: Write drift CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/ocp-artifacts') }}/preflight_drift.csv"
+    mode: "0644"
+    content: |
+      kind,namespace,name,count
+      {% for r in _live.results %}
+      {{ r.resource.kind }},{{ (r.resources[0].metadata.namespace if r.resources | length > 0 and r.resources[0].metadata is defined and r.resources[0].metadata.namespace is defined else '') }},{{ (r.resources[0].metadata.name if r.resources | length > 0 else '') }},{{ r.resources | length }}
+      {% endfor %}

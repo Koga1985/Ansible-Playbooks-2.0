@@ -1,0 +1,29 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert maintenance inputs provided
+  ansible.builtin.assert:
+    that:
+      - freeze_objects is defined
+      - pdb_objects is defined
+    fail_msg: "Provide freeze_objects (e.g., ConfigMap or custom flag) and pdb_objects list."
+
+- name: Apply maintenance freeze objects
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ freeze_objects | default([]) }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }
+
+- name: Apply PodDisruptionBudgets
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ pdb_objects | default([]) }}"
+  loop_control: { label: "{{ item.metadata.namespace }}:{{ item.metadata.name }}" }

@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert OLM objects provided
+  ansible.builtin.assert:
+    that:
+      - olm_objects is defined
+      - olm_objects | length > 0
+    fail_msg: "Provide olm_objects (OperatorGroup/Subscription/InstallPlan)."
+
+- name: Apply OLM objects (approval: Automatic/Manual)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ olm_objects }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }
