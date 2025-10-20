@@ -1,0 +1,12 @@
+
+---
+- name: Expire stale IOCs (guarded by dry_run)
+  when: not (dry_run | default(true))
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/intel/iocs/expire"
+    method: POST
+    headers: { Authorization: "Bearer {{ dragos_token }}", Content-Type: "application/json" }
+    body_format: json
+    body: { before: "{{ expire.before_iso }}" }
+    status_code: [200,202]
+    validate_certs: "{{ dragos_verify_ssl }}"

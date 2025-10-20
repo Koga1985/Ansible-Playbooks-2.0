@@ -1,0 +1,10 @@
+
+---
+ioc: {}
+expire: {}
+artifacts_dir: "/tmp/dragos-artifacts"
+dragos_base_url: "https://tenant.dragos.com"
+dragos_token: "{{ lookup('env','DRAGOS_TOKEN') }}"
+dragos_verify_ssl: true
+page_size: 500
+dry_run: true

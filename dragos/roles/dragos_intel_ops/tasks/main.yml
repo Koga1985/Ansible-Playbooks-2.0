@@ -1,0 +1,18 @@
+
+---
+- name: Ensure artifacts directory exists
+  ansible.builtin.file:
+    path: "{{ artifacts_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Ingest IOCs (when provided)
+  when: ioc is defined and (ioc | length) > 0
+  ansible.builtin.include_tasks: ioc_ingest.yml
+
+- name: Expire stale IOCs (guarded)
+  when: expire is defined and (expire.before_iso is defined)
+  ansible.builtin.include_tasks: ioc_expire.yml
+
+- name: Pull WorldView advisories
+  ansible.builtin.include_tasks: worldview_pull.yml

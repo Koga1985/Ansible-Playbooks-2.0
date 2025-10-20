@@ -1,0 +1,22 @@
+
+---
+- name: Pull advisories
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/intel/worldview?limit={{ page_size }}"
+    method: GET
+    headers: { Authorization: "Bearer {{ dragos_token }}" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ dragos_verify_ssl }}"
+  register: _wv
+
+- name: Save digest CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/worldview_digest.csv"
+    mode: "0644"
+    content: |
+      id,published,title,severity,tags
+      {% set items = (_wv.json.items if _wv.json.items is defined else _wv.json.data | default([])) %}
+      {% for i in items %}
+      {{ i.id | default('') }},{{ i.published | default('') }},{{ i.title | default('') | replace(',', ';') }},{{ i.severity | default('') }},{{ (i.tags | default([])) | join('|') }}
+      {% endfor %}

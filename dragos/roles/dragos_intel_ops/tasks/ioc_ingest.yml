@@ -1,0 +1,13 @@
+
+---
+- name: Ingest IOCs from local file
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/intel/iocs"
+    method: POST
+    headers: { Authorization: "Bearer {{ dragos_token }}" }
+    body_format: form-multipart
+    body:
+      file: "{{ lookup('ansible.builtin.file', ioc.path) }}"
+      format: "{{ ioc.format | default('stix') }}"
+    status_code: [200,201,202]
+    validate_certs: "{{ dragos_verify_ssl }}"
