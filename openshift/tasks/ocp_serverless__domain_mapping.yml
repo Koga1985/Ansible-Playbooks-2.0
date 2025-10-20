@@ -1,0 +1,18 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert knative_domain_config provided
+  ansible.builtin.assert:
+    that:
+      - knative_domain_config is defined
+    fail_msg: "Provide knative_domain_config (ConfigMap config-domain)."
+
+- name: Apply Knative domain mapping
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ knative_domain_config }}"

@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert Argo apps/appsets provided
+  ansible.builtin.assert:
+    that:
+      - argocd_apps is defined
+      - argocd_apps | length > 0
+    fail_msg: "Provide argocd_apps (Applications/AppProjects/AppSets)."
+
+- name: Apply Argo applications/appsets
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ argocd_apps }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

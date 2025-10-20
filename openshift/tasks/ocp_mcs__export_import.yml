@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert MCS objects provided
+  ansible.builtin.assert:
+    that:
+      - mcs_objects is defined
+      - mcs_objects | length > 0
+    fail_msg: "Provide mcs_objects (ServiceExport/ServiceImport/policies)."
+
+- name: Apply multi-cluster services objects
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ mcs_objects }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert tekton_resources provided
+  ansible.builtin.assert:
+    that:
+      - tekton_resources is defined
+      - tekton_resources | length > 0
+    fail_msg: "Provide tekton_resources (pipelines/tasks/triggers/PVCs)."
+
+- name: Apply Tekton resources
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ tekton_resources }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

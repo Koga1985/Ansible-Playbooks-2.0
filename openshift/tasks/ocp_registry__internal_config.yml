@@ -1,0 +1,19 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert image_registry provided
+  ansible.builtin.assert:
+    that:
+      - image_registry is defined
+      - image_registry | length > 0
+    fail_msg: "Provide image_registry (ImageRegistry CR)."
+
+- name: Apply internal ImageRegistry configuration
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ image_registry }}"

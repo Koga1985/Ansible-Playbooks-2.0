@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert serverless_manifests provided
+  ansible.builtin.assert:
+    that:
+      - serverless_manifests is defined
+      - serverless_manifests | length > 0
+    fail_msg: "Provide serverless_manifests (Operator/Subscription/CRs)."
+
+- name: Apply Serverless operator/Knative CRs
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ serverless_manifests }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

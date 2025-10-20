@@ -1,0 +1,30 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert autoscale objects provided
+  ansible.builtin.assert:
+    that:
+      - hpa_objects is defined or vpa_objects is defined
+    fail_msg: "Provide hpa_objects and/or vpa_objects."
+
+- name: Apply HPAs
+  when: hpa_objects is defined
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ hpa_objects | default([]) }}"
+  loop_control: { label: "{{ item.metadata.namespace }}:{{ item.metadata.name }}" }
+
+- name: Apply VPAs (if using VPA operator)
+  when: vpa_objects is defined
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ vpa_objects | default([]) }}"
+  loop_control: { label: "{{ item.metadata.namespace }}:{{ item.metadata.name }}" }

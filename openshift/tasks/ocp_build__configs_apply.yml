@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert build_objects provided
+  ansible.builtin.assert:
+    that:
+      - build_objects is defined
+      - build_objects | length > 0
+    fail_msg: "Provide build_objects (BuildConfigs/ImageStreams/etc.)."
+
+- name: Apply build configs and imagestreams
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ build_objects }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

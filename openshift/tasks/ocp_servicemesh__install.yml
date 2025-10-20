@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert ossm_manifests provided
+  ansible.builtin.assert:
+    that:
+      - ossm_manifests is defined
+      - ossm_manifests | length > 0
+    fail_msg: "Provide ossm_manifests (Operators + SMCP/SMR + Jaeger/Kiali)."
+
+- name: Apply Service Mesh operators and control plane
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ ossm_manifests }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

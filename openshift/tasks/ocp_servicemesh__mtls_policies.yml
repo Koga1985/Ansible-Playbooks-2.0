@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert mesh_policies provided
+  ansible.builtin.assert:
+    that:
+      - mesh_policies is defined
+      - mesh_policies | length > 0
+    fail_msg: "Provide mesh_policies (PeerAuthentication/AuthPolicy/VS/GW)."
+
+- name: Apply mTLS and traffic policies
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ mesh_policies }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

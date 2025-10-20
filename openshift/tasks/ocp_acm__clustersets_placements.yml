@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert clusterset objects provided
+  ansible.builtin.assert:
+    that:
+      - acm_clusterset_objects is defined
+      - acm_clusterset_objects | length > 0
+    fail_msg: "Provide acm_clusterset_objects (ManagedClusterSet/Placement/Binding)."
+
+- name: Apply ACM cluster set/placement objects
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ acm_clusterset_objects }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

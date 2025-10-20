@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert events pipeline manifests provided
+  ansible.builtin.assert:
+    that:
+      - events_pipeline is defined
+      - events_pipeline | length > 0
+    fail_msg: "Provide events_pipeline (Vector/Fluent DaemonSet + CM/Secret/Svc)."
+
+- name: Apply events→logging/SIEM pipeline
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ events_pipeline }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

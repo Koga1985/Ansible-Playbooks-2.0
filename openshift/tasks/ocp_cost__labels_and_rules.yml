@@ -1,0 +1,34 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert cost inputs provided
+  ansible.builtin.assert:
+    that:
+      - cost_labels is defined
+    fail_msg: "Set cost_labels: [ { namespace, labels:{ owner, cost-center, ... } } ]."
+
+- name: Apply cost labels to namespaces
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ item.namespace }}"
+        labels: "{{ item.labels }}"
+  loop: "{{ cost_labels }}"
+  loop_control: { label: "{{ item.namespace }}" }
+
+- name: Apply cost rules (optional CRs/ConfigMaps)
+  when: cost_rules is defined and (cost_rules | length > 0)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ cost_rules }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

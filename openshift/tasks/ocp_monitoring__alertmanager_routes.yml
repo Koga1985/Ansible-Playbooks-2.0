@@ -1,0 +1,19 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert alertmanager_config is provided
+  ansible.builtin.assert:
+    that:
+      - alertmanager_config is defined
+      - alertmanager_config | length > 0
+    fail_msg: "Provide alertmanager_config (Secret data.alertmanager.yaml)."
+
+- name: Configure Alertmanager routes (PagerDuty/Slack/etc.)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ alertmanager_config }}"

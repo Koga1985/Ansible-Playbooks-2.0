@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert ArgoCD manifests provided
+  ansible.builtin.assert:
+    that:
+      - argocd_manifests is defined
+      - argocd_manifests | length > 0
+    fail_msg: "Provide argocd_manifests (Operator/Subscription/CR)."
+
+- name: Apply Argo CD operator/instance manifests
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ argocd_manifests }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }

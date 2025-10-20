@@ -1,0 +1,21 @@
+---
+# Common vars (override via -e or vars files)
+# kubeconfig: ~/.kube/config
+# context: ""
+# artifacts_dir: /tmp/ocp-artifacts
+# Requires: kubernetes.core collection
+
+- name: Assert issuers provided
+  ansible.builtin.assert:
+    that:
+      - issuers is defined
+      - issuers | length > 0
+    fail_msg: "Provide issuers (Issuer/ClusterIssuer for ACME/CA/Vault)."
+
+- name: Apply Issuer/ClusterIssuer resources
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(lookup('env','KUBECONFIG')) }}"
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ issuers }}"
+  loop_control: { label: "{{ item.kind }}:{{ item.metadata.name }}" }
