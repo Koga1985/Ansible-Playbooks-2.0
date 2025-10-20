@@ -1,0 +1,6 @@
+---
+- name: Build allowlist intents
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/allowlist.json"
+    mode: "0644"
+    content: "{{ (flows_now.json.items if flows_now.json.items is defined else flows_now.json.data | default([])) | map('extract', {'src':'src','dst':'dst','proto':'proto','port':'port'}) | map('combine', {'service': None}) | list | to_nice_json }}"

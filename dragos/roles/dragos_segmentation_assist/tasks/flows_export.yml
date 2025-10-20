@@ -1,0 +1,16 @@
+---
+- name: Export flows
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/flows?limit={{ page_size }}"
+    method: GET
+    headers: { Authorization: "Bearer {{ dragos_token }}" }
+    return_content: true
+    status_code: 200
+    validate_certs: "{{ dragos_verify_ssl }}"
+  register: flows_now
+
+- name: Save flows JSON
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/flows.json"
+    mode: "0644"
+    content: "{{ flows_now.content }}"

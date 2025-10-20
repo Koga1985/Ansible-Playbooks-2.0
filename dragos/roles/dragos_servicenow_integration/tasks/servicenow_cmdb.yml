@@ -1,0 +1,22 @@
+
+---
+- name: Load assets JSON
+  ansible.builtin.set_fact:
+    _assets: "{{ lookup('ansible.builtin.file', artifacts_dir + '/assets_full.json') | from_json }}"
+
+- name: Upsert to ServiceNow table
+  ansible.builtin.uri:
+    url: "{{ servicenow.url }}/api/now/table/{{ servicenow.table }}"
+    method: POST
+    headers: { Authorization: "Bearer {{ servicenow.token }}", Content-Type: "application/json" }
+    body_format: json
+    body:
+      name: "{{ item.hostname | default(item.name) }}"
+      ip_address: "{{ item.primary_ip | default(item.ip) }}"
+      u_site: "{{ item.site | default('') }}"
+      u_zone: "{{ item.zone | default('') }}"
+      u_vendor: "{{ item.vendor | default('') }}"
+      u_model: "{{ item.model | default('') }}"
+    status_code: [200,201]
+  loop: "{{ (_assets.items if _assets.items is defined else _assets.data | default([])) }}"
+  loop_control: { label: "{{ item.id | default('') }}" }

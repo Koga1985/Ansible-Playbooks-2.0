@@ -1,0 +1,13 @@
+---
+- name: Load allowlist
+  ansible.builtin.set_fact:
+    allowlist: "{{ lookup('ansible.builtin.file', artifacts_dir + '/allowlist.json') | from_json }}"
+- name: Render Check Point rules CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/checkpoint_rules.csv"
+    mode: "0644"
+    content: |
+      name,source,destination,service,action,track,install-on
+      {% for r in allowlist %}
+      ALLOW_{{ loop.index }},{{ r.src }},{{ r.dst }},{{ (r.proto ~ '/' ~ r.port) }},Accept,Log,Policy Targets
+      {% endfor %}

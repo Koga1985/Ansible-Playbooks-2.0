@@ -1,0 +1,19 @@
+
+---
+- name: Load alerts JSON
+  ansible.builtin.set_fact:
+    _alerts: "{{ lookup('ansible.builtin.file', artifacts_dir + '/alerts_filtered.json') | from_json }}"
+
+- name: Create incidents for high/critical alerts
+  ansible.builtin.uri:
+    url: "{{ servicenow.url }}/api/now/table/{{ servicenow.incident_table | default('incident') }}"
+    method: POST
+    headers: { Authorization: "Bearer {{ servicenow.token }}", Content-Type: "application/json" }
+    body_format: json
+    body:
+      short_description: "Dragos alert {{ item.id }}: {{ item.summary | default('') }}"
+      severity: "{{ '1' if (item.severity | default('low')) in ['critical'] else ('2' if (item.severity | default('low')) in ['high'] else '3') }}"
+      description: "Category={{ item.category | default('') }}, Site={{ item.site | default('') }}"
+    status_code: [200,201]
+  loop: "{{ (_alerts.items if _alerts.items is defined else _alerts.data | default([])) | selectattr('severity','in',['high','critical']) | list }}"
+  loop_control: { label: "{{ item.id }}" }

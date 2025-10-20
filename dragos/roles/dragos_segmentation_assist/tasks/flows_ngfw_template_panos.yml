@@ -1,0 +1,9 @@
+---
+- name: Load allowlist
+  ansible.builtin.set_fact:
+    allowlist: "{{ lookup('ansible.builtin.file', artifacts_dir + '/allowlist.json') | from_json }}"
+- name: Render PAN-OS rules template
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/panos_rules.json"
+    mode: "0644"
+    content: "{{ {'rules': (allowlist | map('combine', {'action':'allow','from':'any','to':'any'}) | list)} | to_nice_json }}"

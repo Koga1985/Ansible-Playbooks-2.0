@@ -1,0 +1,13 @@
+---
+- name: Register temporary flow exceptions
+  ansible.builtin.uri:
+    url: "{{ dragos_base_url }}/api/flows/exceptions"
+    method: POST
+    headers: { Authorization: "Bearer {{ dragos_token }}", Content-Type: "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: [200,201]
+    validate_certs: "{{ dragos_verify_ssl }}"
+  when: not (dry_run | default(true))
+  loop: "{{ exceptions | default([]) }}"
+  loop_control: { label: "{{ item.src }}->{{ item.dst }} {{ item.service | default(item.proto ~ '/' ~ item.port) }}" }

@@ -1,0 +1,17 @@
+---
+- name: Load intent & deployed policy
+  ansible.builtin.set_fact:
+    intent: "{{ lookup('ansible.builtin.file', artifacts_dir + '/allowlist.json') | from_json }}"
+    deployed: "{{ lookup('ansible.builtin.file', deployed_policy_csv) | splitlines }}"
+
+- name: Save drift JSON
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/policy_drift.json"
+    mode: "0644"
+    content: |
+      {{
+        {{
+          'missing': [ i for i in intent if ((i.proto ~ '/' ~ i.port) not in (deployed | join('\n'))) ],
+          'extra': []
+        }} | to_nice_json
+      }}

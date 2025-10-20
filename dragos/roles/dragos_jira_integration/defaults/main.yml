@@ -1,0 +1,13 @@
+---
+
+dragos_base_url: "https://tenant.dragos.com"
+dragos_token: "{{ lookup('env','DRAGOS_TOKEN') }}"
+dragos_verify_ssl: true
+artifacts_dir: "/tmp/dragos-artifacts"
+page_size: 500
+dry_run: true
+
+jira:
+  url: "https://jira.example"
+  token: "{{ lookup('env','JIRA_TOKEN') }}"
+  project: "OT"

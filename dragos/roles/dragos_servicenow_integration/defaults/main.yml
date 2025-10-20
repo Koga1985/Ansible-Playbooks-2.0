@@ -1,0 +1,14 @@
+---
+
+dragos_base_url: "https://tenant.dragos.com"
+dragos_token: "{{ lookup('env','DRAGOS_TOKEN') }}"
+dragos_verify_ssl: true
+artifacts_dir: "/tmp/dragos-artifacts"
+page_size: 500
+dry_run: true
+
+servicenow:
+  url: "https://now.example"
+  token: "{{ lookup('env','SNOW_TOKEN') }}"
+  table: "cmdb_ci_computer"
+  incident_table: "incident"

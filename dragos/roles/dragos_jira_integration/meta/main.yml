@@ -1,0 +1,9 @@
+
+---
+galaxy_info:
+  role_name: dragos_jira_integration
+  author: automation
+  description: Issue creation for vulnerabilities/worklists in Jira.
+  license: MIT
+  min_ansible_version: "2.12"
+dependencies: []
