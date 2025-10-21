@@ -1,0 +1,13 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Forward via syslog/CEF relay (placeholder)
+  when: syslog is defined and syslog.host is defined
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/syslog_batch_queued.txt"
+    mode: "0644"
+    content: "Queued {{ (alerts | default([])) | length }} events for syslog relay."

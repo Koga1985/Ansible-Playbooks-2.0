@@ -1,0 +1,20 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Open tickets in ITSM (ServiceNow example)
+  when: itsm is defined and itsm.url is defined
+  ansible.builtin.uri:
+    url: "{{ itsm.url }}/api/now/table/{{ itsm.table | default('incident') }}"
+    method: POST
+    force_basic_auth: true
+    url_username: "{{ itsm.user }}"
+    url_password: "{{ itsm.token }}"
+    headers: { "Content-Type": "application/json" }
+    body_format: json
+    body: "{{ item }}"
+    status_code: 200,201,409
+  loop: "{{ worklist }}"

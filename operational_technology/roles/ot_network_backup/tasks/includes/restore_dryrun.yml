@@ -1,0 +1,18 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Guard: dry-run only by default
+  ansible.builtin.assert:
+    that: [ dry_run | default(true) | bool ]
+    fail_msg: "Set dry_run=true for safety or explicitly override to perform restore."
+- name: Produce restore plan artifact
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/network_restore_plan_{{ inventory_hostname }}.txt"
+    mode: "0644"
+    content: |
+      # Restore plan for {{ inventory_hostname }}
+      # Copy cfg to device candidate via SCP/NETCONF; commit confirmed; verify; rollback on error.

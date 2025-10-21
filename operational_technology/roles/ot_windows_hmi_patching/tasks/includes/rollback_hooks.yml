@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Rollback hooks
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/rollback_plan_{{ inventory_hostname }}.txt"
+    mode: "0644"
+    content: "Rollback steps: revert snapshot, uninstall KBs (placeholder)."

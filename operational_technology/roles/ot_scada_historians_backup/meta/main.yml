@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  role_name: ot_scada_historians_backup
+  description: Read-only config export for SCADA/Historians
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

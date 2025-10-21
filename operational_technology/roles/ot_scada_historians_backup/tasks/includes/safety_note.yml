@@ -1,0 +1,13 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Write safety note (skip runtime processes)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/scada_backup_safety_{{ inventory_hostname }}.txt"
+    mode: "0644"
+    content: |
+      Do not back up or touch running historian/SCADA processes. Export configs only.

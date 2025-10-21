@@ -1,0 +1,5 @@
+---
+- ansible.builtin.include_tasks: includes/export.yml
+- ansible.builtin.include_tasks: includes/checksum.yml
+- ansible.builtin.include_tasks: includes/golden_drift.yml
+- ansible.builtin.include_tasks: includes/restore_plan.yml

@@ -1,0 +1,5 @@
+---
+- ansible.builtin.include_tasks: includes/pull_audit.yml
+- ansible.builtin.include_tasks: includes/role_reviews.yml
+- ansible.builtin.include_tasks: includes/rule_diffs.yml
+- ansible.builtin.include_tasks: includes/bundle_zip.yml

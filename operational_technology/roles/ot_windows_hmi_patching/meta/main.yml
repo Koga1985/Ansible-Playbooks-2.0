@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  role_name: ot_windows_hmi_patching
+  description: Staged HMI patching with snapshots and rollback hooks
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

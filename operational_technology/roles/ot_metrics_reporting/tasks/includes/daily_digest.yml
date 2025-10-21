@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Daily digest placeholder
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/daily_digest.csv"
+    mode: "0644"
+    content: "metric,value\nnew_assets,0\nclosed_alerts,0\n"

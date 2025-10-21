@@ -1,0 +1,19 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Build high-priority worklist (threshold)
+  ansible.builtin.set_fact:
+    worklist: "{{ (findings | default([])) | selectattr('risk','ge', risk_threshold | default(80)) | list }}"
+- name: Write worklist CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/vuln_worklist.csv"
+    mode: "0644"
+    content: |
+      id,asset,risk,summary,owner
+      {% for i in worklist %}
+      {{ i.id }},{{ i.asset }},{{ i.risk }},{{ (i.summary | default('')) | replace(',',';') }},{{ i.owner | default('') }}
+      {% endfor %}

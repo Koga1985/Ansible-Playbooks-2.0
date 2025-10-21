@@ -1,0 +1,4 @@
+---
+- ansible.builtin.include_tasks: includes/daily_digest.yml
+- ansible.builtin.include_tasks: includes/scorecards.yml
+- ansible.builtin.include_tasks: includes/monthly_summary.yml

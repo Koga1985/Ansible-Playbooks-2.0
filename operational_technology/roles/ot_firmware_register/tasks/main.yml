@@ -1,0 +1,4 @@
+---
+- ansible.builtin.include_tasks: includes/import_versions.yml
+- ansible.builtin.include_tasks: includes/delta_report.yml
+- ansible.builtin.include_tasks: includes/signature_check.yml

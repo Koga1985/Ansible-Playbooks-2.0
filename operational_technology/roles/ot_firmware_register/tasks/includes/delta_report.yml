@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Delta report vs current inventory (placeholder)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/firmware_delta.csv"
+    mode: "0644"
+    content: "device,model,current,desired,delta\n"

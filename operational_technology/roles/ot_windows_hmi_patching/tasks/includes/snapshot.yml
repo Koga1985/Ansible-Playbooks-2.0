@@ -1,0 +1,13 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Snapshot VM if virtualized (guarded)
+  when: vmware is defined and vmware.snapshot | default(true) | bool
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/snapshot_{{ inventory_hostname }}.txt"
+    mode: "0644"
+    content: "Snapshot requested for {{ inventory_hostname }} (placeholder)."

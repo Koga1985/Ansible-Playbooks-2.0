@@ -1,0 +1,4 @@
+---
+artifacts_dir: /tmp/ot-artifacts
+risk_threshold: 80
+itsm: {}

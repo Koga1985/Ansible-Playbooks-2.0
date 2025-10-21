@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Rule diffs (policy drift report)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/rule_diffs.csv"
+    mode: "0644"
+    content: "device,rule,change,when\n"

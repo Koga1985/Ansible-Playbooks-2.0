@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  role_name: ot_network_backup
+  description: Config backup for L2/L3 devices with diff and offload
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

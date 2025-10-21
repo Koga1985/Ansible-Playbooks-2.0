@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  role_name: ot_firewall_backup
+  description: NGFW backup/versioned export with checksum & restore plan
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

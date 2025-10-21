@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  role_name: ot_compliance_pack_62443
+  description: Evidence bundle for ISA/IEC-62443
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

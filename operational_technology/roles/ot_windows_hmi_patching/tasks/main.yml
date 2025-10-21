@@ -1,0 +1,5 @@
+---
+- ansible.builtin.include_tasks: includes/prechecks.yml
+- ansible.builtin.include_tasks: includes/snapshot.yml
+- ansible.builtin.include_tasks: includes/patch_rings.yml
+- ansible.builtin.include_tasks: includes/rollback_hooks.yml

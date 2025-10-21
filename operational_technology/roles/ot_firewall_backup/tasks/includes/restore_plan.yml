@@ -1,0 +1,16 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Generate restore plan (read-only)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/ngfw_restore_plan_{{ inventory_hostname }}.txt"
+    mode: "0644"
+    content: |
+      # Steps:
+      # 1) Verify checksum {{ artifacts_dir }}/ngfw_backup_{{ inventory_hostname }}.sha256
+      # 2) Import bundle via vendor API/GUI
+      # 3) Validate policy layers and licenses before commit

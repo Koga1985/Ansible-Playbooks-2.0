@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Verify signed binaries (hash list)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/firmware_signature_check.txt"
+    mode: "0644"
+    content: "Signature verification results (placeholder)."

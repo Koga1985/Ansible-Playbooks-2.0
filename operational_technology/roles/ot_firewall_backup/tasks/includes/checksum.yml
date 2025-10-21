@@ -1,0 +1,16 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Checksum bundle
+  ansible.builtin.shell: "sha256sum {{ artifacts_dir }}/ngfw_backup_{{ inventory_hostname }}.tgz | awk '{print $1}'"
+  register: sum
+  changed_when: false
+- name: Write checksum
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/ngfw_backup_{{ inventory_hostname }}.sha256"
+    mode: "0644"
+    content: "{{ sum.stdout }}"

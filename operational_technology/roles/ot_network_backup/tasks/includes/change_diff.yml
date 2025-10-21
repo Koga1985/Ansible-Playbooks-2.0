@@ -1,0 +1,33 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Prepare previous snapshot path
+  ansible.builtin.set_fact:
+    prev_path: "{{ artifacts_dir }}/network_backup_prev_{{ inventory_hostname }}.cfg"
+    curr_path: "{{ artifacts_dir }}/network_backup_{{ inventory_hostname }}.cfg"
+- name: Ensure prev exists (first run copy)
+  ansible.builtin.copy:
+    src: "{{ curr_path }}"
+    dest: "{{ prev_path }}"
+    remote_src: true
+    force: false
+- name: Compute diff
+  ansible.builtin.shell: |
+    set -e
+    if [ -f "{{ prev_path }}" ] && [ -f "{{ curr_path }}" ]; then
+      diff -u "{{ prev_path }}" "{{ curr_path }}" || true
+    else
+      echo "No previous snapshot"
+    fi
+  args: { executable: /bin/bash }
+  register: diffout
+  changed_when: false
+- name: Write diff
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/network_backup_diff_{{ inventory_hostname }}.patch"
+    mode: "0644"
+    content: "{{ diffout.stdout }}"

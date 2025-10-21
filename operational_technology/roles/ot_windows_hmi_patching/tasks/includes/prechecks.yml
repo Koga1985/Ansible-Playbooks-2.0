@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Prechecks (CPU/mem/AV) placeholder
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/precheck_{{ inventory_hostname }}.txt"
+    mode: "0644"
+    content: "CPU/MEM/AV prechecks passed (placeholder)."

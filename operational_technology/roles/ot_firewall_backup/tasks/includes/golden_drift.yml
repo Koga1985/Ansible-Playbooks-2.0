@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Compare against golden (if provided)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/ngfw_golden_drift_{{ inventory_hostname }}.txt"
+    mode: "0644"
+    content: "{{ 'Golden not supplied' if (golden_config | default('')) == '' else 'Drift check to be implemented per vendor format' }}"

@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Backup device configs (multi-vendor placeholder)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/network_backup_{{ inventory_hostname }}.cfg"
+    mode: "0600"
+    content: "{{ device_running_config | default('# fetch via network_cli/netconf') }}"

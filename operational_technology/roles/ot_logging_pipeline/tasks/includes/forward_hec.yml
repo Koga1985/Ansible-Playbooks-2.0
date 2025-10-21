@@ -1,0 +1,19 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Forward to Splunk HEC (batch placeholder)
+  when: hec is defined and hec.url is defined
+  ansible.builtin.uri:
+    url: "{{ hec.url }}"
+    method: POST
+    headers:
+      Authorization: "Splunk {{ hec.token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      events: "{{ alerts | default([]) }}"
+    status_code: 200,201,202

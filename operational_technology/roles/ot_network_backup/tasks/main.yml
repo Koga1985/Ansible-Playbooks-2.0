@@ -1,0 +1,5 @@
+---
+- ansible.builtin.include_tasks: includes/daily_backup.yml
+- ansible.builtin.include_tasks: includes/change_diff.yml
+- ansible.builtin.include_tasks: includes/secure_offload.yml
+- ansible.builtin.include_tasks: includes/restore_dryrun.yml

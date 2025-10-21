@@ -1,0 +1,5 @@
+---
+- ansible.builtin.include_tasks: includes/pull_alerts.yml
+- ansible.builtin.include_tasks: includes/normalize.yml
+- ansible.builtin.include_tasks: includes/forward_hec.yml
+- ansible.builtin.include_tasks: includes/forward_syslog.yml

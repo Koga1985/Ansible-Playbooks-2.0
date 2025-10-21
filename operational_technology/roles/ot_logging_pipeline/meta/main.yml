@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  role_name: ot_logging_pipeline
+  description: Normalize and forward OT alerts/events to SIEM/SOAR
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

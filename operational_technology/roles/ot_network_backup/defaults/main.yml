@@ -1,0 +1,4 @@
+---
+artifacts_dir: /tmp/ot-artifacts
+dry_run: true
+offload: {}

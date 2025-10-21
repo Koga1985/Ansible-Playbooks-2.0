@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Export SCADA/Historian configuration via API (read-only placeholder)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/scada_config_{{ inventory_hostname }}.zip"
+    mode: "0600"
+    content: "{{ scada_export_blob | default('') }}"

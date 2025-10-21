@@ -1,0 +1,14 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Create compliance ZIP bundle
+  ansible.builtin.shell: |
+    set -e
+    cd "{{ artifacts_dir }}"
+    zip -r compliance_62443_bundle.zip audit_events.json role_reviews.csv rule_diffs.csv >/dev/null 2>&1 || true
+  args: { executable: /bin/bash }
+  changed_when: false

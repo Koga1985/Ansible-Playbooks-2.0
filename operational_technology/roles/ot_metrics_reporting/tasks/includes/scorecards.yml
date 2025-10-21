@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Scorecards per site/app
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/scorecards.csv"
+    mode: "0644"
+    content: "site,app,coverage,exceptions,hits\n"

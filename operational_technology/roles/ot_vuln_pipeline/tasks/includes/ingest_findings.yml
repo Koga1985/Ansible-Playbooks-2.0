@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Ingest findings from providers (Claroty/Dragos/TVM)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/vuln_findings.json"
+    mode: "0644"
+    content: "{{ findings | default([]) | to_nice_json }}"

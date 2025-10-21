@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Patch rings execution (canary → wave1 → waveN)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/patch_rings_{{ inventory_hostname }}.txt"
+    mode: "0644"
+    content: "Applied patch ring per schedule (placeholder)."

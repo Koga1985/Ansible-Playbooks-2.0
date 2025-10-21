@@ -1,0 +1,5 @@
+---
+- ansible.builtin.include_tasks: includes/ingest_findings.yml
+- ansible.builtin.include_tasks: includes/worklist.yml
+- ansible.builtin.include_tasks: includes/ticket_create.yml
+- ansible.builtin.include_tasks: includes/ticket_reconcile.yml
