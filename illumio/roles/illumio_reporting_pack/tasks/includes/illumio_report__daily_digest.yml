@@ -1,0 +1,66 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/illumio-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Set common headers
+  ansible.builtin.set_fact:
+    illumio_headers:
+      Accept: "application/json"
+      Content-Type: "application/json"
+      X-Illumio-Org: "{{ org_id }}"
+
+- name: Set default window (24h)
+  ansible.builtin.set_fact:
+    _now: "{{ lookup('pipe','date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+    _yday: "{{ lookup('pipe','date -u -d "-1 day" +%Y-%m-%dT%H:%M:%SZ') }}"
+    since: "{{ since | default(_yday) }}"
+    until: "{{ until | default(_now) }}"
+
+- name: Fetch new workloads since window
+  ansible.builtin.uri:
+    url: "{{ pce_url }}/api/v2/orgs/{{ org_id }}/workloads?created_at>={{ since }}&created_at<={{ until }}"
+    method: GET
+    user: "{{ api_user }}"
+    password: "{{ api_key }}"
+    force_basic_auth: true
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    headers: "{{ illumio_headers }}"
+    return_content: true
+  register: _new_wls
+
+- name: Fetch policy changes (audit)
+  ansible.builtin.uri:
+    url: "{{ pce_url }}/api/v2/orgs/{{ org_id }}/audit_events?start_time={{ since }}&end_time={{ until }}&category=policy"
+    method: GET
+    user: "{{ api_user }}"
+    password: "{{ api_key }}"
+    force_basic_auth: true
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    headers: "{{ illumio_headers }}"
+    return_content: true
+  register: _policy
+
+- name: Fetch exceptions created in window
+  ansible.builtin.uri:
+    url: "{{ pce_url }}/api/v2/orgs/{{ org_id }}/sec_policy/draft/exceptions?created_at>={{ since }}&created_at<={{ until }}"
+    method: GET
+    user: "{{ api_user }}"
+    password: "{{ api_key }}"
+    force_basic_auth: true
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    headers: "{{ illumio_headers }}"
+    return_content: true
+  register: _exceptions
+
+- name: Write digest CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/illumio-artifacts') }}/daily_digest.csv"
+    mode: "0644"
+    content: |
+      section,count
+      new_workloads,{{ _new_wls.json | length | default(0) }}
+      policy_events,{{ _policy.json | length | default(0) }}
+      exceptions,{{ _exceptions.json | length | default(0) }}

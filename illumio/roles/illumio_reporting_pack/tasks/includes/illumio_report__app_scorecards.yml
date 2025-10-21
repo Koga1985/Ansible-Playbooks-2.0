@@ -1,0 +1,39 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/illumio-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Set common headers
+  ansible.builtin.set_fact:
+    illumio_headers:
+      Accept: "application/json"
+      Content-Type: "application/json"
+      X-Illumio-Org: "{{ org_id }}"
+
+- name: Fetch workloads
+  ansible.builtin.uri:
+    url: "{{ pce_url }}/api/v2/orgs/{{ org_id }}/workloads"
+    method: GET
+    user: "{{ api_user }}"
+    password: "{{ api_key }}"
+    force_basic_auth: true
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    headers: "{{ illumio_headers }}"
+    return_content: true
+  register: _wls
+
+- name: Write scorecards CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/illumio-artifacts') }}/app_scorecards.csv"
+    mode: "0644"
+    content: |
+      app,total,labeled,enforced,labeled_pct,enforced_pct
+      {% for wl in _wls.json | default([]) %}
+      {% set app = (wl.labels | default([]) | selectattr('key','equalto','app') | map(attribute='value') | list | first | default('unlabeled')) %}
+      {% set total = 1 %}
+      {% set labeled = 1 if (wl.labels | default([])) | length > 0 else 0 %}
+      {% set enforced = 1 if wl.enforcement_mode == 'enforced' else 0 %}
+      {{ app }},{{ total }},{{ labeled }},{{ enforced }},{{ (labeled/total*100) | round(2) }},{{ (enforced/total*100) | round(2) }}
+      {% endfor %}

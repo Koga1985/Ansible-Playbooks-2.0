@@ -1,0 +1,10 @@
+---
+- name: Segmentation KPI
+  ansible.builtin.include_tasks: "includes/illumio_report__segmentation_score.yml"
+- name: App scorecards
+  ansible.builtin.include_tasks: "includes/illumio_report__app_scorecards.yml"
+- name: Daily digest (24h)
+  ansible.builtin.include_tasks: "includes/illumio_report__daily_digest.yml"
+- name: Audit events export (optional)
+  when: start_time is defined and end_time is defined
+  ansible.builtin.include_tasks: "includes/illumio_report__audit_events.yml"

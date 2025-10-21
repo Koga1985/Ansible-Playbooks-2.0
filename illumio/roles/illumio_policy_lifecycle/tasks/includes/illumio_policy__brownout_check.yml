@@ -1,0 +1,32 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/illumio-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Set common headers
+  ansible.builtin.set_fact:
+    illumio_headers:
+      Accept: "application/json"
+      Content-Type: "application/json"
+      X-Illumio-Org: "{{ org_id }}"
+
+- name: Execute impact simulation
+  ansible.builtin.uri:
+    url: "{{ pce_url }}/api/v2/orgs/{{ org_id }}/traffic_flows/flows/traffic_query"
+    method: POST
+    user: "{{ api_user }}"
+    password: "{{ api_key }}"
+    force_basic_auth: true
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    headers: "{{ illumio_headers }}"
+    body_format: json
+    body: "{{ simulate_query }}"
+  register: _sim
+
+- name: Gate on denied flows
+  vars:
+    denied: "{{ (_sim.json | default([])) | selectattr('policy_decision','equalto','blocked') | list | length }}"
+  ansible.builtin.assert:
+    that: [ (denied | int) <= (deny_threshold | default(0) | int) ]

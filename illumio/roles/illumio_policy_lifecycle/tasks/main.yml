@@ -1,0 +1,15 @@
+---
+- name: Brownout check (gate)
+  when: brownout_enabled | default(true) | bool
+  ansible.builtin.include_tasks: "includes/illumio_policy__brownout_check.yml"
+
+- name: Apply rules if provided
+  when: rule_set is defined
+  ansible.builtin.include_tasks: "includes/illumio_rules__apply.yml"
+
+- name: Apply exceptions if provided
+  when: exceptions is defined and (exceptions | length > 0)
+  ansible.builtin.include_tasks: "includes/illumio_rules__exceptions.yml"
+
+- name: Promote policy
+  ansible.builtin.include_tasks: "includes/illumio_policy__promote.yml"

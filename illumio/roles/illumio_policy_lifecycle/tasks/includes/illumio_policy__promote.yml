@@ -1,0 +1,45 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/illumio-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Set common headers
+  ansible.builtin.set_fact:
+    illumio_headers:
+      Accept: "application/json"
+      Content-Type: "application/json"
+      X-Illumio-Org: "{{ org_id }}"
+
+- name: Promote draft→staged
+  ansible.builtin.uri:
+    url: "{{ pce_url }}/api/v2/orgs/{{ org_id }}/sec_policy/promotion/draft_to_staged"
+    method: POST
+    user: "{{ api_user }}"
+    password: "{{ api_key }}"
+    force_basic_auth: true
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    headers: "{{ illumio_headers }}"
+    body_format: json
+    body: { "change_description": "{{ promote_comment }}" }
+    status_code: 200,201,202
+  register: _staged
+
+- name: Fail if staged errors
+  ansible.builtin.assert:
+    that: [ (_staged.json.errors | default([])) | length == 0 ]
+
+- name: Promote staged→active (respect dry_run)
+  when: not (dry_run | default(true) | bool)
+  ansible.builtin.uri:
+    url: "{{ pce_url }}/api/v2/orgs/{{ org_id }}/sec_policy/promotion/staged_to_active"
+    method: POST
+    user: "{{ api_user }}"
+    password: "{{ api_key }}"
+    force_basic_auth: true
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    headers: "{{ illumio_headers }}"
+    body_format: json
+    body: { "change_description": "{{ promote_comment }}" }
+    status_code: 200,201,202

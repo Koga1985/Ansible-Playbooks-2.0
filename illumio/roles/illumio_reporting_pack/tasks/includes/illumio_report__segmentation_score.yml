@@ -1,0 +1,49 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/illumio-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Set common headers
+  ansible.builtin.set_fact:
+    illumio_headers:
+      Accept: "application/json"
+      Content-Type: "application/json"
+      X-Illumio-Org: "{{ org_id }}"
+
+- name: Fetch workloads and rules (for scoring)
+  ansible.builtin.uri:
+    url: "{{ pce_url }}/api/v2/orgs/{{ org_id }}/workloads"
+    method: GET
+    user: "{{ api_user }}"
+    password: "{{ api_key }}"
+    force_basic_auth: true
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    headers: "{{ illumio_headers }}"
+    return_content: true
+  register: _wls
+
+- name: Fetch active rulesets
+  ansible.builtin.uri:
+    url: "{{ pce_url }}/api/v2/orgs/{{ org_id }}/sec_policy/active/rule_sets"
+    method: GET
+    user: "{{ api_user }}"
+    password: "{{ api_key }}"
+    force_basic_auth: true
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    headers: "{{ illumio_headers }}"
+    return_content: true
+  register: _rules
+
+- name: Compute KPI
+  vars:
+    total: "{{ _wls.json | length }}"
+    labeled: "{{ (_wls.json | selectattr('labels','defined') | list) | length }}"
+    enforced: "{{ (_wls.json | selectattr('enforcement_mode','equalto','enforced') | list) | length }}"
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir | default('/tmp/illumio-artifacts') }}/segmentation_score.csv"
+    mode: "0644"
+    content: |
+      total_workloads,labeled_pct,enforced_pct,rule_sets
+      {{ total }},{{ ((labeled|float/(total|float if total|int>0 else 1))*100)|round(2) }},{{ ((enforced|float/(total|float if total|int>0 else 1))*100)|round(2) }},{{ _rules.json | length | default(0) }}

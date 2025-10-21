@@ -1,0 +1,20 @@
+---
+- name: Download installers (optional)
+  when: platforms is defined and (platforms | length > 0)
+  ansible.builtin.include_tasks: "includes/illumio_ven__download_installer.yml"
+
+- name: Install & pair on Linux (optional)
+  when: install_linux | default(false) | bool
+  ansible.builtin.include_tasks: "includes/illumio_ven__install_linux.yml"
+
+- name: Install & pair on Windows (optional)
+  when: install_windows | default(false) | bool
+  ansible.builtin.include_tasks: "includes/illumio_ven__install_windows.yml"
+
+- name: Upgrade VEN fleet (optional)
+  when: upgrade_targets is defined
+  ansible.builtin.include_tasks: "includes/illumio_ven__upgrade.yml"
+
+- name: Unpair / decom (optional)
+  when: decom_targets is defined
+  ansible.builtin.include_tasks: "includes/illumio_ven__unpair_decom.yml"

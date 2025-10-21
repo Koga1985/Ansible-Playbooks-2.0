@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  role_name: illumio_reporting_pack
+  description: Illumio KPIs, app scorecards, daily digest, audit exports
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

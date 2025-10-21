@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  role_name: illumio_ven_fleet
+  description: Manage Illumio VEN installers, pairing, upgrades and decom
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

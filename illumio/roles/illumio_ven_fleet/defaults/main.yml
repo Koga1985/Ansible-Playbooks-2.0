@@ -1,0 +1,10 @@
+---
+verify_ssl: true
+artifacts_dir: /tmp/illumio-artifacts
+platforms: []
+pairing_key: ""
+ven_installer: ""
+upgrade_targets: []
+batch_size: 50
+batch_pause: 60
+decom_targets: []

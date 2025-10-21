@@ -1,0 +1,28 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/illumio-artifacts') }}"
+    state: directory
+    mode: "0755"
+
+- name: Set common headers
+  ansible.builtin.set_fact:
+    illumio_headers:
+      Accept: "application/json"
+      Content-Type: "application/json"
+      X-Illumio-Org: "{{ org_id }}"
+
+- name: Assert inputs
+  ansible.builtin.assert:
+    that: [ pairing_key is defined, ven_installer is defined ]
+- name: Push installer
+  ansible.builtin.copy:
+    src: "{{ ven_installer }}"
+    dest: "/tmp/illumio-ven-installer.pkg"
+    mode: "0755"
+- name: Install & pair
+  ansible.builtin.shell: |
+    set -e
+    /bin/bash /tmp/illumio-ven-installer.pkg --pair --management-server "{{ pce_url }}" --pairing-key "{{ pairing_key }}" {{ extra_flags | default('') }}
+  args:
+    executable: /bin/bash

@@ -1,0 +1,7 @@
+---
+verify_ssl: true
+artifacts_dir: /tmp/illumio-artifacts
+promote_comment: "Change via Ansible"
+deny_threshold: 0
+dry_run: true
+brownout_enabled: true
