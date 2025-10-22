@@ -1,0 +1,14 @@
+---
+- name: Validate input rules
+  ansible.builtin.assert:
+    that: [ rules is defined ]
+    fail_msg: "rules list required."
+- name: Write PAN-OS rules CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/panos_rules.csv"
+    mode: "0644"
+    content: |
+      section,source,destination,service,action,tags
+      {% for r in rules %}
+      {{ r.section | default('OT-Allow') }},{{ r.src }},{{ r.dst }},{{ r.service }},{{ r.action | default('allow') }},{{ (r.tags | default(['ot'])) | join(';') }}
+      {% endfor %}

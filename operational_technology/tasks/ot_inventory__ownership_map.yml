@@ -1,0 +1,36 @@
+---
+- name: Load deduped inventory
+  ansible.builtin.slurp:
+    src: "{{ artifacts_dir }}/inventory_deduped.json"
+  register: inv
+- name: Load ownership SoT
+  ansible.builtin.slurp:
+    src: "{{ owners_sot_path }}"
+  register: own
+- name: Parse
+  ansible.builtin.set_fact:
+    inv_list: "{{ (inv.content | b64decode | from_json) | default([]) }}"
+    owners: "{{ (own.content | b64decode | from_json) | default([]) }}"
+- name: Build map by hostname
+  ansible.builtin.set_fact:
+    owners_map: >-
+      {%- set m = {} -%}
+      {%- for r in owners -%}
+      {%-   set _ = m.update({ (r.hostname | default('')): r.owner | default('') }) -%}
+      {%- endfor -%}
+      {{ m }}
+- name: Attach owner to inventory
+  ansible.builtin.set_fact:
+    inv_owned: >-
+      {%- set out = [] -%}
+      {%- for a in inv_list -%}
+      {%-   set a2 = a.copy() -%}
+      {%-   set _ = a2.update({'owner': owners_map.get(a.hostname, a.owner) }) -%}
+      {%-   do out.append(a2) -%}
+      {%- endfor -%}
+      {{ out }}
+- name: Save owned inventory
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/inventory_owned.json"
+    mode: "0644"
+    content: "{{ inv_owned | to_nice_json }}"

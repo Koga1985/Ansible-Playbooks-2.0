@@ -1,0 +1,10 @@
+---
+- name: Validate conduits
+  ansible.builtin.assert:
+    that: [ conduits is defined ]
+    fail_msg: "conduits list required."
+- name: Write intents JSON
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/allowlist_intents.json"
+    mode: "0644"
+    content: "{{ conduits | to_nice_json }}"

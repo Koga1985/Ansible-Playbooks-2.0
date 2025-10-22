@@ -1,0 +1,10 @@
+---
+- name: Validate exceptions
+  ansible.builtin.assert:
+    that: [ exceptions is defined ]
+    fail_msg: "exceptions list required."
+- name: Save exceptions
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/allowlist_exceptions.json"
+    mode: "0644"
+    content: "{{ exceptions | to_nice_json }}"

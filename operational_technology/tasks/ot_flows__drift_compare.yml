@@ -1,0 +1,14 @@
+---
+- name: Load intents
+  ansible.builtin.slurp:
+    src: "{{ artifacts_dir }}/allowlist_intents.json"
+  register: intents
+- name: Load deployed export (CSV placeholder)
+  ansible.builtin.slurp:
+    src: "{{ deployed_policy_csv }}"
+  register: deployed
+- name: Emit drift note
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/allowlist_drift.txt"
+    mode: "0644"
+    content: "Implement CSV parsing and diff here. Intents vs deployed exported rules."

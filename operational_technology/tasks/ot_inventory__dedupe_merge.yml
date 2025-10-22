@@ -1,0 +1,26 @@
+---
+- name: Load normalized JSON
+  ansible.builtin.slurp:
+    src: "{{ artifacts_dir }}/inventory_normalized.json"
+  register: norm
+- name: To list
+  ansible.builtin.set_fact:
+    items: "{{ (norm.content | b64decode | from_json) | default([]) }}"
+- name: Heuristic de-duplication
+  ansible.builtin.set_fact:
+    items_deduped: >-
+      {%- set seen = set() -%}
+      {%- set out = [] -%}
+      {%- for it in items -%}
+        {%- set k = (it.ip ~ '|' ~ it.mac ~ '|' ~ it.hostname) -%}
+        {%- if k not in seen -%}
+          {%- do seen.add(k) -%}
+          {%- do out.append(it) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+- name: Save deduped JSON
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/inventory_deduped.json"
+    mode: "0644"
+    content: "{{ items_deduped | to_nice_json }}"

@@ -1,0 +1,22 @@
+---
+- name: Load deduped inventory
+  ansible.builtin.slurp:
+    src: "{{ artifacts_dir }}/inventory_deduped.json"
+  register: ded
+- name: Parse
+  ansible.builtin.set_fact:
+    items: "{{ (ded.content | b64decode | from_json) | default([]) }}"
+- name: Compute metrics
+  ansible.builtin.set_fact:
+    total: "{{ items | length }}"
+    labeled: "{{ items | selectattr('site','string') | selectattr('zone','string') | list | length }}"
+    coverage_pct: "{{ ( ( (items | selectattr('site','string') | selectattr('zone','string') | list | length ) | float ) / ( (items | length) | default(1) ) * 100 ) | round(2) }}"
+- name: Write coverage CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/coverage_report.csv"
+    mode: "0644"
+    content: |
+      metric,value
+      total,{{ total }}
+      labeled,{{ labeled }}
+      coverage_pct,{{ coverage_pct }}

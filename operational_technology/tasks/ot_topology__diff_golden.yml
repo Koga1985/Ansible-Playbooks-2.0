@@ -1,0 +1,25 @@
+---
+- name: Load current flows
+  ansible.builtin.slurp:
+    src: "{{ artifacts_dir }}/flows.json"
+  register: cur
+- name: Load golden
+  ansible.builtin.slurp:
+    src: "{{ topology_golden_path }}"
+  register: gold
+- name: Parse
+  ansible.builtin.set_fact:
+    cur_list: "{{ (cur.content | b64decode | from_json) | default([]) }}"
+    gold_list: "{{ (gold.content | b64decode | from_json) | default([]) }}"
+- name: Emit CSV drift
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/topology_drift.csv"
+    mode: "0644"
+    content: |
+      type,src,dst,service
+      {% for f in cur_list if f not in gold_list %}
+      new,{{ f.src }},{{ f.dst }},{{ f.service | default('') }}
+      {% endfor %}
+      {% for f in gold_list if f not in cur_list %}
+      removed,{{ f.src }},{{ f.dst }},{{ f.service | default('') }}
+      {% endfor %}

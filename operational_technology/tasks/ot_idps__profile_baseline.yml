@@ -1,0 +1,6 @@
+---
+- name: Save baseline profile
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/idps_profile.json"
+    mode: "0644"
+    content: "{{ idps_profile | default({'name':'ot-baseline','signatures':['ics-core']}) | to_nice_json }}"

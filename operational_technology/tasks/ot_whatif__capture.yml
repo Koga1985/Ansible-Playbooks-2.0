@@ -1,0 +1,11 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+- name: Write What-If summary
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/what_if_summary.txt"
+    mode: "0644"
+    content: "{{ what_if_summary | default('Downstream roles should populate what_if_summary for audit review.') }}"

@@ -1,0 +1,31 @@
+---
+- name: Load deduped inventory
+  ansible.builtin.slurp:
+    src: "{{ artifacts_dir }}/inventory_deduped.json"
+  register: ded
+- name: Parse
+  ansible.builtin.set_fact:
+    items: "{{ (ded.content | b64decode | from_json) | default([]) }}"
+- name: Upsert each item (ServiceNow example)
+  when: cmdb.type | default('servicenow') == 'servicenow'
+  ansible.builtin.uri:
+    url: "{{ cmdb.url }}/api/now/table/{{ cmdb.table | default('cmdb_ci') }}"
+    method: POST
+    force_basic_auth: true
+    url_username: "{{ cmdb.user }}"
+    url_password: "{{ cmdb.token }}"
+    headers: { "Content-Type": "application/json" }
+    body_format: json
+    body: >-
+      {%- set m = cmdb.field_map | default({}) -%}
+      {%- set obj = {} -%}
+      {%- set _ = obj.update( { m.hostname | default('name'): item.hostname } ) -%}
+      {%- set _ = obj.update( { m.ip | default('ip_address'): item.ip } ) -%}
+      {%- set _ = obj.update( { m.site | default('u_site'): item.site } ) -%}
+      {%- set _ = obj.update( { m.zone | default('u_zone'): item.zone } ) -%}
+      {%- set _ = obj.update( { m.criticality | default('u_criticality'): item.criticality } ) -%}
+      {%- set _ = obj.update( { m.owner | default('u_owner'): item.owner } ) -%}
+      {{ obj }}
+    status_code: 200,201,409
+  loop: "{{ items }}"
+  loop_control: { label: "{{ item.hostname }}" }

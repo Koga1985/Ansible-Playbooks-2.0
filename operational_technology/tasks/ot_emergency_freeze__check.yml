@@ -1,0 +1,18 @@
+---
+- name: Read freeze flag from file (optional)
+  when: sot_freeze_file | default('') != ''
+  ansible.builtin.slurp:
+    src: "{{ sot_freeze_file }}"
+  register: freeze_raw
+- name: Determine freeze status
+  ansible.builtin.set_fact:
+    freeze_active: >-
+      {%- if freeze_raw is defined -%}
+      {{ (freeze_raw.content | b64decode | trim) in ['1','true','True','TRUE','yes','on'] }}
+      {%- else -%}
+      {{ freeze_flag | default(false) }}
+      {%- endif -%}
+- name: Hard stop if freeze is active
+  ansible.builtin.assert:
+    that: [ not (freeze_active | bool) ]
+    fail_msg: "Emergency freeze active — blocking changes."

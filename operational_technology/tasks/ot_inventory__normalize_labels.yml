@@ -1,0 +1,39 @@
+---
+- name: Read raw inventory
+  ansible.builtin.slurp:
+    src: "{{ artifacts_dir }}/inventory_raw.json"
+  register: raw
+- name: Parse JSON
+  ansible.builtin.set_fact:
+    assets: "{{ (raw.content | b64decode | from_json) | default([]) }}"
+- name: Normalize labels
+  ansible.builtin.set_fact:
+    assets_normalized: >-
+      {%- set out = [] -%}
+      {%- for a in assets -%}
+        {%- set item = {
+          'hostname': a.hostname | default(a.name | default('')),
+          'ip': a.ip | default(a.primaryIp | default('')),
+          'mac': a.mac | default(a.primaryMac | default('')),
+          'site': a.labels.site | default(a.site | default('')),
+          'zone': a.labels.zone | default(a.zone | default('')),
+          'criticality': a.labels.criticality | default(a.criticality | default('')),
+          'owner': a.labels.owner | default(a.owner | default(''))
+        } -%}
+        {%- do out.append(item) -%}
+      {%- endfor -%}
+      {{ out }}
+- name: Write normalized CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/inventory_normalized.csv"
+    mode: "0644"
+    content: |
+      hostname,ip,mac,site,zone,criticality,owner
+      {% for a in assets_normalized %}
+      {{ a.hostname }},{{ a.ip }},{{ a.mac }},{{ a.site }},{{ a.zone }},{{ a.criticality }},{{ a.owner }}
+      {% endfor %}
+- name: Write normalized JSON
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/inventory_normalized.json"
+    mode: "0644"
+    content: "{{ assets_normalized | to_nice_json }}"

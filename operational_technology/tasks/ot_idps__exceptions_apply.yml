@@ -1,0 +1,10 @@
+---
+- name: Validate exceptions
+  ansible.builtin.assert:
+    that: [ idps_exceptions is defined ]
+    fail_msg: "idps_exceptions list required."
+- name: Save exceptions JSON
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/idps_exceptions.json"
+    mode: "0644"
+    content: "{{ idps_exceptions | to_nice_json }}"

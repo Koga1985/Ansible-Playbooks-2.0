@@ -1,0 +1,26 @@
+---
+- name: Ensure artifacts dir
+  ansible.builtin.file:
+    path: "{{ artifacts_dir | default('/tmp/ot-artifacts') }}"
+    state: directory
+    mode: "0755"
+- name: Assert provider config
+  ansible.builtin.assert:
+    that:
+      - provider is defined
+      - provider.url is defined
+      - provider.token is defined
+    fail_msg: "provider.url and provider.token are required."
+- name: Pull assets from provider
+  ansible.builtin.uri:
+    url: "{{ provider.url }}{{ provider.paths.assets | default('/assets') }}"
+    method: GET
+    headers: { Authorization: "{{ provider.token }}" }
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    return_content: true
+  register: assets
+- name: Save raw inventory
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/inventory_raw.json"
+    mode: "0644"
+    content: "{{ assets.json | to_nice_json }}"

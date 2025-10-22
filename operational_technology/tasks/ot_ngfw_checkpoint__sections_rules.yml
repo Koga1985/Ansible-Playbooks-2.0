@@ -1,0 +1,14 @@
+---
+- name: Validate input rules
+  ansible.builtin.assert:
+    that: [ rules is defined ]
+    fail_msg: "rules list required."
+- name: Write Check Point rules CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/checkpoint_rules.csv"
+    mode: "0644"
+    content: |
+      layer,source,destination,service,action,comments
+      {% for r in rules %}
+      {{ r.layer | default('Network') }},{{ r.src }},{{ r.dst }},{{ r.service }},{{ r.action | default('Accept') }},{{ r.comments | default('ot-allowlist') }}
+      {% endfor %}

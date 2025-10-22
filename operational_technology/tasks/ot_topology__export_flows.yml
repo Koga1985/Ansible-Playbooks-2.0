@@ -1,0 +1,14 @@
+---
+- name: Pull flows
+  ansible.builtin.uri:
+    url: "{{ provider.url }}{{ provider.paths.flows | default('/flows') }}"
+    method: GET
+    headers: { Authorization: "{{ provider.token }}" }
+    validate_certs: "{{ verify_ssl | default(true) }}"
+    return_content: true
+  register: flows
+- name: Save flows
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/flows.json"
+    mode: "0644"
+    content: "{{ flows.json | to_nice_json }}"

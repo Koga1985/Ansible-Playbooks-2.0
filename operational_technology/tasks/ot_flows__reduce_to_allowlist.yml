@@ -1,0 +1,13 @@
+---
+- name: Load flows
+  ansible.builtin.slurp:
+    src: "{{ artifacts_dir }}/flows.json"
+  register: flows
+- name: Reduce (placeholder unique)
+  ansible.builtin.set_fact:
+    intents: "{{ (flows.content | b64decode | from_json) | default([]) | unique }}"
+- name: Save intents
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/allowlist_from_flows.json"
+    mode: "0644"
+    content: "{{ intents | to_nice_json }}"

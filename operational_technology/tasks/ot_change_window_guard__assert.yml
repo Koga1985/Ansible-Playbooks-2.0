@@ -1,0 +1,25 @@
+---
+- name: Compute current time context
+  ansible.builtin.set_fact:
+    _wday: "{{ ansible_date_time.weekday | default('Mon') }}"
+    _time: "{{ ansible_date_time.time | default('00:00:00') }}"
+- name: Evaluate windows
+  ansible.builtin.set_fact:
+    window_allowed: >-
+      {%- set allow = false -%}
+      {%- for w in change_windows | default([]) -%}
+        {%- set days = w.days | default(['Mon','Tue','Wed','Thu','Fri']) -%}
+        {%- set start = w.start | default('00:00') -%}
+        {%- set end = w.end | default('23:59') -%}
+        {%- if _wday in days and (_time[0:5] >= start) and (_time[0:5] <= end) -%}
+          {%- set allow = true -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ allow }}
+- name: Force effective_dry_run
+  ansible.builtin.set_fact:
+    effective_dry_run: "{{ (dry_run | default(true)) or (not window_allowed and not (change_window_override | default(false) | bool)) }}"
+- name: Block if outside window and no override
+  ansible.builtin.assert:
+    that: [ window_allowed or (change_window_override | default(false) | bool) or (effective_dry_run | bool) ]
+    fail_msg: "Blocked: outside change window and not in dry-run."
