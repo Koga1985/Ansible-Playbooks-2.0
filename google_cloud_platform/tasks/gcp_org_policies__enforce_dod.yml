@@ -1,0 +1,42 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+    org_id: ""
+    folder_id: ""
+    billing_account: ""
+    labels_common: {}
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Render DoD org-policy constraints
+  vars:
+    constraints: "{{ dod_constraints | default({
+      'compute.disableSerialPortAccess': True,
+      'compute.requireOsLogin': True,
+      'compute.requireShieldedVm': True,
+      'iam.disableServiceAccountKeyCreation': True,
+      'iam.allowedPolicyMemberDomains': ['dod.mil'],
+      'storage.uniformBucketLevelAccess': True
+    }) }}"
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/org_policies_dod.json"
+    mode: "0644"
+    content: "{{ constraints | to_nice_json }}"
+- name: Apply (org-policies)
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    jq -r 'to_entries[] | "\(.key)=\(.value)"' "{{ artifacts_dir }}/org_policies_dod.json" | while IFS='=' read -r key val; do
+      if [[ "$val" == "true" ]]; then
+        {{ gcloud_bin }} org-policies enable-enforce "$key" --organization="{{ org_id }}"
+      else
+        {{ gcloud_bin }} org-policies disable-enforce "$key" --organization="{{ org_id }}"
+      fi
+    done
+  args: { executable: /bin/bash }

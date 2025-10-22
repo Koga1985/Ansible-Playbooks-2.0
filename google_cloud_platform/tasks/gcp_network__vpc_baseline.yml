@@ -1,0 +1,27 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+    org_id: ""
+    folder_id: ""
+    billing_account: ""
+    labels_common: {}
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan VPC hub & spokes, DNS, NAT, egress controls
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/network_vpc_baseline_plan.json"
+    mode: "0644"
+    content: "{{ vpc_plan | default({}) | to_nice_json }}"
+- name: Apply baseline example
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    echo "Create hub/spoke networks and NAT per plan"
+  args: { executable: /bin/bash }

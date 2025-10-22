@@ -1,0 +1,34 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+    org_id: ""
+    folder_id: ""
+    billing_account: ""
+    labels_common: {}
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan group→IAM bindings
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/iam_group_bindings_plan.json"
+    mode: "0644"
+    content: "{{ group_bindings | default([]) | to_nice_json }}"
+- name: Apply bindings
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    jq -c '.[]' "{{ artifacts_dir }}/iam_group_bindings_plan.json" | while read -r b; do
+      scope=$(jq -r '.scope' <<<"$b"); role=$(jq -r '.role' <<<"$b"); group=$(jq -r '.group' <<<"$b")
+      case "$scope" in
+        org:*)    id=${scope#org:};    {{ gcloud_bin }} organizations add-iam-policy-binding $id --member="group:$group" --role="$role" ;;
+        folder:*) id=${scope#folder:}; {{ gcloud_bin }} resource-manager folders add-iam-policy-binding $id --member="group:$group" --role="$role" ;;
+        project:*)id=${scope#project:};{{ gcloud_bin }} projects add-iam-policy-binding $id --member="group:$group" --role="$role" ;;
+      esac
+    done
+  args: { executable: /bin/bash }

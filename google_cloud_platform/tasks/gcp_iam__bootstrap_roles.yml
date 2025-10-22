@@ -1,0 +1,31 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+    org_id: ""
+    folder_id: ""
+    billing_account: ""
+    labels_common: {}
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan custom roles (org)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/iam_custom_roles_plan.json"
+    mode: "0644"
+    content: "{{ custom_roles | default([]) | to_nice_json }}"
+- name: Create/update custom roles
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    jq -c '.[]' "{{ artifacts_dir }}/iam_custom_roles_plan.json" | while read -r r; do
+      rid=$(jq -r '.id' <<<"$r"); title=$(jq -r '.title' <<<"$r")
+      perms=$(jq -r '.permissions | join(",")' <<<"$r")
+      {{ gcloud_bin }} iam roles describe "$rid" --organization "{{ org_id }}" >/dev/null 2>&1 &&           {{ gcloud_bin }} iam roles update "$rid" --organization "{{ org_id }}" --title "$title" --permissions "$perms" ||           {{ gcloud_bin }} iam roles create "$rid" --organization "{{ org_id }}" --title "$title" --permissions "$perms"
+    done
+  args: { executable: /bin/bash }

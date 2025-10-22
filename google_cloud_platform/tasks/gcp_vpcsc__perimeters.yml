@@ -1,0 +1,26 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+    org_id: ""
+    folder_id: ""
+    billing_account: ""
+    labels_common: {}
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan VPC-SC perimeters & egress rules
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/vpcsc_perimeters_plan.json"
+    mode: "0644"
+    content: "{{ vpcsc | default([]) | to_nice_json }}"
+- name: Apply VPC-SC perimeters (placeholder)
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    echo "Apply VPC-SC perimeters using access-context-manager"
+  args: { executable: /bin/bash }

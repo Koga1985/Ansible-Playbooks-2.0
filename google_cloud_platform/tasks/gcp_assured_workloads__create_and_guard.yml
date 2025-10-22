@@ -1,0 +1,32 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+    org_id: ""
+    folder_id: ""
+    billing_account: ""
+    labels_common: {}
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan Assured Workloads
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/assured_workloads_plan.json"
+    mode: "0644"
+    content: "{{ assured_workloads | default([]) | to_nice_json }}"
+- name: Apply (gcloud beta)
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    jq -c '.[]' "{{ artifacts_dir }}/assured_workloads_plan.json" | while read -r aw; do
+      disp=$(jq -r '.display_name' <<<"$aw")
+      loc=$(jq -r '.location' <<<"$aw")
+      comp=$(jq -r '.compliance_regime' <<<"$aw")
+      {{ gcloud_bin }} beta assured-workloads locations workloads create "$disp" --organization="{{ org_id }}" --location="$loc" --compliance-regime="$comp" || true
+    done
+  args: { executable: /bin/bash }

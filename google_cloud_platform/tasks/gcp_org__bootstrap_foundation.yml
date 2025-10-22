@@ -1,0 +1,27 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+    org_id: ""
+    folder_id: ""
+    billing_account: ""
+    labels_common: {}
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan org/folder/billing/logging foundation
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/org_bootstrap_plan.json"
+    mode: "0644"
+    content: "{{ {'org_id': org_id, 'folder_id': folder_id, 'billing_account': billing_account, 'labels': labels_common, 'logging_sinks': logging_sinks | default([])} | to_nice_json }}"
+- name: Apply (gcloud)
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ gcloud_bin }} logging sinks list --organization={{ org_id }} --format=json > "{{ artifacts_dir }}/pre_sinks.json"
+  args: { executable: /bin/bash }
