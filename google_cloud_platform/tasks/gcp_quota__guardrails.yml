@@ -1,0 +1,22 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan quota guardrails per env
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/quota_guardrails_plan.json"
+    mode: "0644"
+    content: "{{ quotas | default({}) | to_nice_json }}"
+- name: Emit quota CSV (review points)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/quota_review.csv"
+    mode: "0644"
+    content: "project,service,metric,limit,desired,action\n"

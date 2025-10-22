@@ -1,0 +1,45 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan GCS bucket policies (UBLA, PAP, retention, CMEK)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/gcs_buckets_policies_plan.json"
+    mode: "0644"
+    content: "{{ gcs_policies | default([]) | to_nice_json }}"
+- name: Apply GCS bucket policies
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    jq -c '.[]' "{{ artifacts_dir }}/gcs_buckets_policies_plan.json" | while read -r b; do
+      pid=$(jq -r '.project_id' <<<"$b"); bucket=$(jq -r '.bucket' <<<"$b")
+      ubla=$(jq -r '.ubla // true' <<<"$b")
+      pap=$(jq -r '.public_access_prevention // "enforced"' <<<"$b")
+      key=$(jq -r '.kms_key // empty' <<<"$b")
+      {{ gcloud_bin }} storage buckets update --project "$pid" --uniform-bucket-level-access="${ubla}" --public-access-prevention="${pap}" "gs://$bucket"
+      if [[ -n "$key" ]]; then
+        {{ gcloud_bin }} storage buckets update --project "$pid" --default-encryption-key="$key" "gs://$bucket"
+      fi
+      if jq -e '.retention // empty' <<<"$b" >/dev/null; then
+        period=$(jq -r '.retention.period_seconds' <<<"$b")
+        lock=$(jq -r '.retention.lock // false' <<<"$b")
+        {{ gcloud_bin }} storage buckets update --project "$pid" --retention-period="$period" "gs://$bucket"
+        if [[ "$lock" == "true" ]]; then
+          {{ gcloud_bin }} storage buckets lock "gs://$bucket" --project "$pid"
+        fi
+      fi
+    done
+  args: { executable: /bin/bash }
+- name: Emit GCS drift CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/gcs_policies_drift.csv"
+    mode: "0644"
+    content: "project,bucket,ubla,pap,retention,kms,status\n"

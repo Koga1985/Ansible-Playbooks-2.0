@@ -1,0 +1,21 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan backup targets (GCS retention lock, BQ snapshots, SQL PITR)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/backup_targets_plan.json"
+    mode: "0644"
+    content: "{{ backups | default({}) | to_nice_json }}"
+- name: Apply backup settings (examples)
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    echo "Lock GCS retention, create BQ snapshot schedules, enable SQL PITR per plan"

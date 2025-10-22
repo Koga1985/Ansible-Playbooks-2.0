@@ -1,0 +1,33 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan BQ datasets policies (CMEK, RLS/CLS, DLP triggers)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/bq_datasets_policies_plan.json"
+    mode: "0644"
+    content: "{{ bq_policies | default([]) | to_nice_json }}"
+- name: Apply (example: set default CMEK on dataset)
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    jq -c '.[]' "{{ artifacts_dir }}/bq_datasets_policies_plan.json" | while read -r d; do
+      pid=$(jq -r '.project_id' <<<"$d"); ds=$(jq -r '.dataset' <<<"$d"); key=$(jq -r '.kms_key' <<<"$d")
+      if [[ -n "$key" ]]; then
+        {{ gcloud_bin }} bq update --default_kms_key="$key" --project_id="$pid" --dataset "$ds"
+      fi
+    done
+  args: { executable: /bin/bash }
+- name: Emit BQ drift CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/bq_policies_drift.csv"
+    mode: "0644"
+    content: "project,dataset,desired_kms,actual_kms,rls_cls,dlp_triggers,status\n"

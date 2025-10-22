@@ -1,0 +1,17 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Render NIST 800-53 control mapping CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/nist80053_mapping.csv"
+    mode: "0644"
+    content: "control,implementation_evidence,owner,last_updated\n"

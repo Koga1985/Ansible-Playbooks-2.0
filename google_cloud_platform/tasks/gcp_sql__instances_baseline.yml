@@ -1,0 +1,36 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan Cloud SQL baseline (private IP, CMEK, backups, IAM DB auth)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/sql_instances_baseline_plan.json"
+    mode: "0644"
+    content: "{{ sql_instances | default([]) | to_nice_json }}"
+- name: Apply Cloud SQL baseline (example settings)
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    jq -c '.[]' "{{ artifacts_dir }}/sql_instances_baseline_plan.json" | while read -r i; do
+      pid=$(jq -r '.project_id' <<<"$i"); inst=$(jq -r '.instance' <<<"$i")
+      {{ gcloud_bin }} sql instances patch "$inst" --project "$pid" --no-assign-ip --network="projects/$pid/global/networks/default" || true
+      if key=$(jq -r '.kms_key // empty' <<<"$i"); [[ -n "$key" ]]; then
+        {{ gcloud_bin }} sql instances patch "$inst" --project "$pid" --disk-encryption-key="$key" || true
+      fi
+      {{ gcloud_bin }} sql instances patch "$inst" --project "$pid" --backup-start-time="02:00" --backup --storage-auto-increase || true
+      {{ gcloud_bin }} sql instances patch "$inst" --project "$pid" --database-flags=cloudsql_iam_authentication=on || true
+    done
+  args: { executable: /bin/bash }
+- name: Emit SQL drift CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/sql_baseline_drift.csv"
+    mode: "0644"
+    content: "project,instance,assign_ip,cmek,backups,iam_db_auth,status\n"

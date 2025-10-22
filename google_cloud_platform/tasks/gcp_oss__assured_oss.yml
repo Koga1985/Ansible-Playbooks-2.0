@@ -1,0 +1,22 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan approved OSS allowlist / CVE notifications
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/assured_oss_plan.json"
+    mode: "0644"
+    content: "{{ assured_oss | default({}) | to_nice_json }}"
+- name: Emit allowlist CSV (for build-time checks)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/assured_oss_allowlist.csv"
+    mode: "0644"
+    content: "package,version,source,approved_by,notes\n"

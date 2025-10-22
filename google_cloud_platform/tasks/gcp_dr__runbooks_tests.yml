@@ -1,0 +1,22 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan DR runbooks and scheduled tests
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/dr_runbooks_plan.json"
+    mode: "0644"
+    content: "{{ dr | default({}) | to_nice_json }}"
+- name: Emit DR artifact bundle index
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/dr_bundle_index.json"
+    mode: "0644"
+    content: "{{ {'bundle':'dr_evidence.zip','contains':['runbooks','test_results','snapshots']} | to_nice_json }}"

@@ -1,0 +1,22 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan Cloud Asset Inventory exports
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/cai_exports_plan.json"
+    mode: "0644"
+    content: "{{ asset_inventory | default({}) | to_nice_json }}"
+- name: Emit CAI export index
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/cai_export_index.json"
+    mode: "0644"
+    content: "{{ {'dest':'gs://bucket/path/', 'schedule':'daily', 'format':'BIGQUERY'} | to_nice_json }}"

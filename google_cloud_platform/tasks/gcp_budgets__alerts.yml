@@ -1,0 +1,21 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan budgets and alerts
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/budgets_plan.json"
+    mode: "0644"
+    content: "{{ budgets | default([]) | to_nice_json }}"
+- name: Apply budgets (scaffold)
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    echo "Create budgets and alert thresholds via Cloud Billing Budget API"

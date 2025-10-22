@@ -1,0 +1,33 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan Pub/Sub encryption & IAM (CMEK, retention, schema)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/pubsub_plan.json"
+    mode: "0644"
+    content: "{{ pubsub | default({}) | to_nice_json }}"
+- name: Apply Pub/Sub CMEK for topics
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    jq -c '.topics[]?' "{{ artifacts_dir }}/pubsub_plan.json" | while read -r t; do
+      pid=$(jq -r '.project_id' <<<"$t"); topic=$(jq -r '.name' <<<"$t"); key=$(jq -r '.kms_key // empty' <<<"$t")
+      if [[ -n "$key" ]]; then
+        {{ gcloud_bin }} pubsub topics update "$topic" --project "$pid" --kms-key="$key"
+      fi
+    done
+  args: { executable: /bin/bash }
+- name: Emit Pub/Sub drift CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/pubsub_drift.csv"
+    mode: "0644"
+    content: "project,topic,desired_kms,actual_kms,retention,schema,status\n"

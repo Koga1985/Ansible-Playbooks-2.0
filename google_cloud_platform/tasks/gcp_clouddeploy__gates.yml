@@ -1,0 +1,21 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan Cloud Deploy gates (pre/post hooks, ticket enforcement)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/clouddeploy_gates_plan.json"
+    mode: "0644"
+    content: "{{ clouddeploy | default({}) | to_nice_json }}"
+- name: Apply Cloud Deploy gates (scaffold)
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    echo "Create delivery pipelines + targets with pre/post deploy hooks and promotion gates"

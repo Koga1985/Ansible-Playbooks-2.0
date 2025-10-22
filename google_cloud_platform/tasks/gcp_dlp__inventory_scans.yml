@@ -1,0 +1,22 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan DLP scans for GCS/BQ
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/dlp_scans_plan.json"
+    mode: "0644"
+    content: "{{ dlp | default({}) | to_nice_json }}"
+- name: Emit DLP schedule CSV
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/dlp_schedule.csv"
+    mode: "0644"
+    content: "resource,type,schedule,notif_channel\n"

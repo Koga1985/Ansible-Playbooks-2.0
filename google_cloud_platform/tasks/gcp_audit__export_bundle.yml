@@ -1,0 +1,24 @@
+---
+- vars:
+    artifacts_dir: "/tmp/gcp-artifacts"
+    apply_changes: false
+    gcloud_bin: "gcloud"
+  block:
+  - name: Ensure artifacts directory
+    ansible.builtin.file:
+      path: "{{ artifacts_dir }}"
+      state: directory
+      mode: "0755"
+
+- name: Plan audit export bundle (org policies, IAM, SCC, logging)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/audit_bundle_plan.json"
+    mode: "0644"
+    content: "{{ audit | default({}) | to_nice_json }}"
+- name: Create placeholder ZIP (bundle) — wire to real exports as needed
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ artifacts_dir }}"
+    echo "org_policies.json" > manifest.txt
+    zip -q -r audit_bundle.zip manifest.txt || true
+  when: apply_changes | bool
