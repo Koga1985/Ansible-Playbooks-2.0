@@ -1,0 +1,35 @@
+---
+- name: ans_ctrl__restore_sandbox.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-controller-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+tasks:
+  - name: Guard — not restoring into production org
+    ansible.builtin.assert:
+      that: "restore_guard_org | default('Sandbox') != 'production'"
+      success_msg: "Proceeding with sandbox import"
+      fail_msg: "Refusing to import into production"
+
+  - name: Restore via tower_import (sandbox)
+    community.general.tower_import:
+      controller_host: "{{ controller_host }}"
+      controller_oauthtoken: "{{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+      state: present
+      assets: "{{ lookup('file', restore_file | default(artifacts_dir ~ '/controller_export.json')) | from_json }}"
+    when: apply_changes | bool

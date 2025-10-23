@@ -1,0 +1,41 @@
+---
+- name: ans_ctrl__instance_groups.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-controller-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+tasks:
+  - name: Plan instance groups
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/instance_groups_plan.json"
+      mode: "0644"
+      content: "{{ instance_groups | default([]) | to_nice_json }}"
+
+  - name: Create instance groups
+    when: apply_changes | bool
+    loop: "{{ instance_groups | default([]) }}"
+    loop_control: { label: "{{ item.name }}" }
+    ansible.controller.instance_group:
+      controller_host: "{{ controller_host }}"
+      controller_oauthtoken: "{{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+      name: "{{ item.name }}"
+      is_container_group: "{{ item.is_container_group | default(false) }}"
+      policy_instance_minimum: "{{ item.policy_instance_minimum | default(0) }}"
+      policy_instance_percentage: "{{ item.policy_instance_percentage | default(0) }}"
+      instances: "{{ item.instances | default(omit) }}"
+      state: present

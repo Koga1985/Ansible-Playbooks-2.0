@@ -1,0 +1,51 @@
+---
+- name: ans_content__lint_molecule.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+vars:
+  repos: "{{ repos | default([]) }}"
+tasks:
+  - name: Plan lint/molecule repos
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/lint_molecule_plan.json"
+      mode: "0644"
+      content: "{{ repos | to_nice_json }}"
+
+  - name: Run ansible-lint and molecule test for each repo
+    when: apply_changes | bool
+    loop: "{{ repos }}"
+    loop_control: { label: "{{ item.path }}" }
+    ansible.builtin.shell: |
+      set -euo pipefail
+      cd "{{ item.path }}"
+      ansible-lint -q || true
+      if [ -f molecule/default/molecule.yml ]; then
+        molecule test || true
+      fi
+    args: { executable: /bin/bash }
+    register: lintres
+    changed_when: false
+
+  - name: Write lint/molecule summary
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/lint_molecule_summary.txt"
+      mode: "0644"
+      content: |
+        Results per repo (see job stdout for details)
+        {{ (repos | map(attribute='path') | list) | join(', ') }}

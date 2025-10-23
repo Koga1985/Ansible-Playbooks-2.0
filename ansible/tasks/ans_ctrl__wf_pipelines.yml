@@ -1,0 +1,56 @@
+---
+- name: ans_ctrl__wf_pipelines.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+vars:
+  wf_name: "{{ wf_name | default('pipeline-plan-approve-apply-verify') }}"
+  organization: "{{ organization | default('Default') }}"
+  nodes: "{{ nodes | default([]) }}"
+tasks:
+  - name: Plan pipeline structure (artifact)
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/wf_pipeline_plan.json"
+      mode: "0644"
+      content: "{{ {'name': wf_name, 'organization': organization, 'nodes': nodes } | to_nice_json }}"
+
+  - name: Create Workflow Job Template (WJT)
+    when: apply_changes | bool
+    ansible.controller.workflow_job_template:
+      controller_host: "{{ controller_host }}"
+      controller_oauthtoken: "{{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+      name: "{{ wf_name }}"
+      organization: "{{ organization }}"
+      state: present
+
+  - name: Build pipeline nodes (plan → approve → apply → verify)
+    when: apply_changes | bool
+    loop: "{{ nodes }}"
+    loop_control: { label: "{{ item.identifier }}" }
+    ansible.controller.workflow_job_template_node:
+      controller_host: "{{ controller_host }}"
+      controller_oauthtoken: "{{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+      workflow: "{{ wf_name }}"
+      identifier: "{{ item.identifier }}"
+      unified_job_template: "{{ item.template }}"
+      success_nodes: "{{ item.success_nodes | default([]) }}"
+      failure_nodes: "{{ item.failure_nodes | default([]) }}"
+      always_nodes: "{{ item.always_nodes | default([]) }}"
+      state: present

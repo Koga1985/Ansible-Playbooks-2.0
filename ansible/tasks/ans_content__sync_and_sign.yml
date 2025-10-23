@@ -1,0 +1,35 @@
+---
+- name: ans_content__sync_and_sign.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+vars:
+  repos: "{{ repos | default([]) }}"
+  signing_service: "{{ signing_service | default({}) }}"
+  promote_map: "{{ promote_map | default([]) }}"
+tasks:
+  - name: Plan sync/sign/promote
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/sync_sign_plan.json"
+      mode: "0644"
+      content: "{{ {'repos': repos, 'signing_service': signing_service, 'promote': promote_map } | to_nice_json }}"
+
+  - name: Sync and sign (placeholder)
+    when: apply_changes | bool
+    ansible.builtin.debug:
+      msg: "Sync PAH repos, sign with signing service, then promote to prod."

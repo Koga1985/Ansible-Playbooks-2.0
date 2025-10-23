@@ -1,0 +1,49 @@
+---
+- name: ans_content__pah_bootstrap.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+vars:
+  ah_url: "{{ ah_url | default('https://pah.example.mil') }}"
+  ah_username: "{{ ah_username | default('admin') }}"
+  ah_password: "{{ ah_password | default('') }}"
+  sso: "{{ sso | default({}) }}"
+  groups: "{{ groups | default([]) }}"
+tasks:
+  - name: Plan PAH bootstrap
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/pah_bootstrap_plan.json"
+      mode: "0644"
+      content: "{{ {'url': ah_url, 'sso': sso, 'groups': groups } | to_nice_json }}"
+
+  - name: Ensure admin login works (sanity)
+    when: apply_changes | bool
+    ansible.builtin.uri:
+      url: "{{ ah_url }}/api/galaxy/pulp/api/v3/status/"
+      method: GET
+      force_basic_auth: true
+      url_username: "{{ ah_username }}"
+      url_password: "{{ ah_password }}"
+      validate_certs: true
+    register: ah_status
+
+  - name: Write PAH status artifact
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/pah_status.json"
+      mode: "0644"
+      content: "{{ ah_status.json | default({'ok': false}) | to_nice_json }}"

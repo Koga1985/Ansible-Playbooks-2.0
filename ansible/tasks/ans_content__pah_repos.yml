@@ -1,0 +1,36 @@
+---
+- name: ans_content__pah_repos.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+vars:
+  ah_url: "{{ ah_url | default('https://pah.example.mil') }}"
+  ah_username: "{{ ah_username | default('admin') }}"
+  ah_password: "{{ ah_password | default('') }}"
+  remotes: "{{ remotes | default([]) }}"
+tasks:
+  - name: Plan PAH remotes/repos
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/pah_repos_plan.json"
+      mode: "0644"
+      content: "{{ remotes | to_nice_json }}"
+
+  - name: Create remotes (scaffold via API)
+    when: apply_changes | bool
+    ansible.builtin.debug:
+      msg: "Create/ensure PAH remotes/repos via API modules (redhat_cop.ah_configuration)"

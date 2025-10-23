@@ -1,0 +1,58 @@
+---
+- name: ans_ctrl__inventories_sources.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-controller-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+tasks:
+  - name: Plan inventories & sources
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/inventories_sources_plan.json"
+      mode: "0644"
+      content: "{{ {'inventories': inventories | default([]), 'sources': sources | default([])} | to_nice_json }}"
+
+  - name: Create inventories
+    when: apply_changes | bool
+    loop: "{{ inventories | default([]) }}"
+    loop_control: { label: "{{ item.name }}" }
+    ansible.controller.inventory:
+      controller_host: "{{ controller_host }}"
+      controller_oauthtoken: "{{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+      name: "{{ item.name }}"
+      organization: "{{ item.organization }}"
+      description: "{{ item.description | default('') }}"
+      kind: "{{ item.kind | default('') }}"
+      state: present
+
+  - name: Create inventory sources
+    when: apply_changes | bool
+    loop: "{{ sources | default([]) }}"
+    loop_control: { label: "{{ item.name }}" }
+    ansible.controller.inventory_source:
+      controller_host: "{{ controller_host }}"
+      controller_oauthtoken: "{{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+      name: "{{ item.name }}"
+      inventory: "{{ item.inventory }}"
+      source: "{{ item.source }}"
+      source_vars: "{{ item.source_vars | default(omit) }}"
+      credential: "{{ item.credential | default(omit) }}"
+      update_on_launch: "{{ item.update_on_launch | default(true) }}"
+      overwrite: "{{ item.overwrite | default(false) }}"
+      overwrite_vars: "{{ item.overwrite_vars | default(false) }}"
+      state: present

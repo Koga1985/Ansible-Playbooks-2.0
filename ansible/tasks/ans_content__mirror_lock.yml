@@ -1,0 +1,39 @@
+---
+- name: ans_content__mirror_lock.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+vars:
+  requirements: "{{ requirements | default('requirements.yml') }}"
+  lockfile_path: "{{ lockfile_path | default(artifacts_dir ~ '/collections.lock') }}"
+tasks:
+  - name: Generate lockfile from requirements (hash/pins)
+    ansible.builtin.command: >
+      ansible-galaxy collection install -r {{ requirements }} --lockfile {{ lockfile_path }} --requirements-file {{ requirements }}
+    changed_when: false
+
+  - name: Publish lockfile artifact
+    ansible.builtin.stat:
+      path: "{{ lockfile_path }}"
+    register: lf
+
+  - name: Fail if lockfile missing
+    ansible.builtin.assert:
+      that: lf.stat.exists
+      fail_msg: "Lockfile not generated"
+      success_msg: "Lockfile generated at {{ lockfile_path }}"

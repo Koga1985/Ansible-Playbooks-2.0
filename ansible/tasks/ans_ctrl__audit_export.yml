@@ -1,0 +1,35 @@
+---
+- name: ans_ctrl__audit_export.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-controller-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+tasks:
+  - name: Fetch recent jobs (last 24h)
+    ansible.builtin.uri:
+      url: "{{ controller_host }}/api/v2/jobs/?order_by=-finished"
+      method: GET
+      headers:
+        Authorization: "Bearer {{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+    register: jobs
+
+  - name: Write jobs JSON
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/jobs_recent.json"
+      mode: "0644"
+      content: "{{ jobs.json | to_nice_json }}"

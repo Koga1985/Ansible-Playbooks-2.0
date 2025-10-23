@@ -1,0 +1,39 @@
+---
+- name: ans_ctrl__upgrade_window.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-controller-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+tasks:
+  - name: Maintenance banner (plan)
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/maintenance_banner.txt"
+      mode: "0644"
+      content: "{{ maintenance_banner | default('Maintenance in progress') }}"
+  - name: Preflight ping
+    ansible.builtin.uri:
+      url: "{{ controller_host }}/api/v2/ping/"
+      method: GET
+      headers:
+        Authorization: "Bearer {{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+    register: ping
+  - name: Write ping to artifact
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/api_ping.json"
+      mode: "0644"
+      content: "{{ ping.json | to_nice_json }}"

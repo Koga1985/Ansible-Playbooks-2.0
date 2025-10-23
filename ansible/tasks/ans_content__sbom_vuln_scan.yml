@@ -1,0 +1,44 @@
+---
+- name: ans_content__sbom_vuln_scan.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+vars:
+  repos: "{{ repos | default([]) }}"
+tasks:
+  - name: Plan SBOM + vuln scan
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/sbom_scan_plan.json"
+      mode: "0644"
+      content: "{{ repos | to_nice_json }}"
+
+  - name: Run syft/grype (if available) to build SBOM and scan
+    when: apply_changes | bool
+    loop: "{{ repos }}"
+    loop_control: { label: "{{ item.path }}" }
+    ansible.builtin.shell: |
+      set -euo pipefail
+      cd "{{ item.path }}"
+      if command -v syft >/dev/null 2>&1; then
+        syft dir:. -o json > "{{ artifacts_dir }}/$(basename {{ item.path }})_sbom.json" || true
+      fi
+      if command -v grype >/dev/null 2>&1; then
+        grype dir:. -o json > "{{ artifacts_dir }}/$(basename {{ item.path }})_vulns.json" || true
+      fi
+    args: { executable: /bin/bash }
+    changed_when: false

@@ -1,0 +1,26 @@
+---
+- name: ans_ctrl__survey_policies.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-controller-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+tasks:
+  - name: Emit survey policy allow/deny list (artifact-only)
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/survey_policies.json"
+      mode: "0644"
+      content: "{{ survey_policies | default({}) | to_nice_json }}"

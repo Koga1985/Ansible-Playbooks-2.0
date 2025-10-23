@@ -1,0 +1,40 @@
+---
+- name: ans_ctrl__ee_images_map.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-controller-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+tasks:
+  - name: Plan Execution Environments
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/ee_map_plan.json"
+      mode: "0644"
+      content: "{{ execution_environments | default([]) | to_nice_json }}"
+
+  - name: Register execution environments
+    when: apply_changes | bool
+    loop: "{{ execution_environments | default([]) }}"
+    loop_control: { label: "{{ item.name }}" }
+    ansible.controller.execution_environment:
+      controller_host: "{{ controller_host }}"
+      controller_oauthtoken: "{{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+      name: "{{ item.name }}"
+      image: "{{ item.image }}"
+      pull: "{{ item.pull | default('always') }}"
+      credential: "{{ item.registry_credential | default(omit) }}"
+      state: present

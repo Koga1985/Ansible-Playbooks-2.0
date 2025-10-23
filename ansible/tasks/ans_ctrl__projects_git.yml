@@ -1,0 +1,46 @@
+---
+- name: ans_ctrl__projects_git.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-controller-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+tasks:
+  - name: Plan projects
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/projects_plan.json"
+      mode: "0644"
+      content: "{{ projects | default([]) | to_nice_json }}"
+
+  - name: Create/update projects from Git
+    when: apply_changes | bool
+    loop: "{{ projects | default([]) }}"
+    loop_control: { label: "{{ item.name }}" }
+    ansible.controller.project:
+      controller_host: "{{ controller_host }}"
+      controller_oauthtoken: "{{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+      name: "{{ item.name }}"
+      organization: "{{ item.organization }}"
+      scm_type: git
+      scm_url: "{{ item.scm_url }}"
+      scm_branch: "{{ item.scm_branch | default('main') }}"
+      scm_clean: "{{ item.scm_clean | default(true) }}"
+      scm_delete_on_update: "{{ item.scm_delete_on_update | default(false) }}"
+      scm_update_on_launch: "{{ item.scm_update_on_launch | default(false) }}"
+      scm_update_cache_timeout: "{{ item.scm_update_cache_timeout | default(0) }}"
+      credential: "{{ item.credential | default(omit) }}"
+      state: present

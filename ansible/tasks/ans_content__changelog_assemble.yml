@@ -1,0 +1,48 @@
+---
+- name: ans_content__changelog_assemble.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+vars:
+  repos: "{{ repos | default([]) }}"
+tasks:
+  - name: Plan changelog assembly
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/changelog_plan.json"
+      mode: "0644"
+      content: "{{ repos | to_nice_json }}"
+
+  - name: Assemble CHANGELOG bundle
+    when: apply_changes | bool
+    ansible.builtin.shell: |
+      set -euo pipefail
+      out="{{ artifacts_dir }}/changelogs_bundle.txt"
+      : > "$out"
+      for r in {{ repos | map(attribute='path') | list | join(' ') }}; do
+        echo "=== $(basename "$r") ===" >> "$out"
+        if [ -f "$r/CHANGELOG.md" ]; then
+          sed -n '1,200p' "$r/CHANGELOG.md" >> "$out"
+        elif [ -f "$r/CHANGELOG.rst" ]; then
+          sed -n '1,200p' "$r/CHANGELOG.rst" >> "$out"
+        else
+          echo "No changelog found" >> "$out"
+        fi
+        echo "" >> "$out"
+      done
+    args: { executable: /bin/bash }
+    changed_when: false

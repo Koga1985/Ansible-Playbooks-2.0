@@ -1,0 +1,34 @@
+---
+- name: ans_ctrl__org_settings.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-controller-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+tasks:
+  - name: Plan controller settings
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/org_settings_plan.json"
+      mode: "0644"
+      content: "{{ controller_settings | default({}) | to_nice_json }}"
+
+  - name: Apply controller settings
+    when: apply_changes | bool
+    ansible.controller.settings:
+      controller_host: "{{ controller_host }}"
+      controller_oauthtoken: "{{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+      settings: "{{ controller_settings }}"

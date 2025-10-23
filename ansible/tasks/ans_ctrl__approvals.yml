@@ -1,0 +1,48 @@
+---
+- name: ans_ctrl__approvals.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
+    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
+    apply_changes: "{{ apply_changes | default(false) }}"
+
+  pre_tasks:
+    - name: Ensure artifacts directory
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+vars:
+  wf_name: "{{ wf_name | default('pipeline-plan-approve-apply-verify') }}"
+  approvals: "{{ approvals | default([]) }}"
+tasks:
+  - name: Plan approvals (artifact)
+    ansible.builtin.copy:
+      dest: "{{ artifacts_dir }}/wf_approvals_plan.json"
+      mode: "0644"
+      content: "{{ {'workflow': wf_name, 'approvals': approvals } | to_nice_json }}"
+
+  - name: Create approval nodes with SLAs and notifications
+    when: apply_changes | bool
+    loop: "{{ approvals }}"
+    loop_control: { label: "{{ item.identifier }}" }
+    ansible.controller.workflow_job_template_node:
+      controller_host: "{{ controller_host }}"
+      controller_oauthtoken: "{{ controller_oauthtoken }}"
+      validate_certs: "{{ validate_certs }}"
+      workflow: "{{ wf_name }}"
+      identifier: "{{ item.identifier }}"
+      approval_node: true
+      extra_data:
+        required_approvals: "{{ item.required_approvals | default(1) }}"
+        timeout: "{{ item.sla_minutes | default(120) }}"
+      success_nodes: "{{ item.success_nodes | default([]) }}"
+      failure_nodes: "{{ item.failure_nodes | default([]) }}"
+      always_nodes: "{{ item.always_nodes | default([]) }}"
+      state: present
