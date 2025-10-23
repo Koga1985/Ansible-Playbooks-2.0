@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: "Ansible Ops Pack"
+  description: "Production-ready role"
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: ["8","9"]
+dependencies: []

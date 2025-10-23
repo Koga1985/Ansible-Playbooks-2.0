@@ -1,0 +1,41 @@
+
+---
+- name: Build paths list
+  ansible.builtin.set_fact:
+    prune_paths: "{{ [artifacts_dir] + paths_extra }}"
+
+- name: Find files older than retention_days
+  ansible.builtin.find:
+    paths: "{{ prune_paths }}"
+    patterns: "{{ match_globs }}"
+    excludes: "{{ exclude_globs }}"
+    age: "{{ retention_days }}d"
+    age_stamp: mtime
+    file_type: file
+    recurse: true
+  register: old_files
+
+- name: Sort and summarize
+  ansible.builtin.set_fact:
+    old_sorted: "{{ old_files.files | sort(attribute='mtime', reverse=false) }}"
+    total_bytes_old: "{{ (old_files.files | map(attribute='size') | list | sum) | default(0) }}"
+
+- name: Report header
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/artifacts_retention_report.csv"
+    mode: "0644"
+    content: "path,size_bytes,mtime,dry_run\n"
+
+- name: Append file lines
+  ansible.builtin.lineinfile:
+    path: "{{ artifacts_dir }}/artifacts_retention_report.csv"
+    line: "{{ item.path }},{{ item.size }},{{ item.mtime }},{{ dry_run | ternary('true','false') }}"
+    create: yes
+  loop: "{{ old_sorted }}"
+
+- name: Delete (age-based) — guarded
+  when: apply_changes | bool and (not dry_run | bool)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ old_sorted }}"

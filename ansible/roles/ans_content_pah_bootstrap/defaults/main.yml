@@ -1,0 +1,14 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+ah_url: "https://pah.example.mil"
+ah_username: "admin"
+ah_password: ""
+sso: {}
+groups: []
+remotes: []   # redhat_cop.ah_configuration.ah_repository + ah_remote patterns
+promote_map: []

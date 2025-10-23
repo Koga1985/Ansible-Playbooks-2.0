@@ -1,0 +1,81 @@
+
+---
+- name: Plan
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/job_lifecycle_plan.json"
+    mode: "0644"
+    content: "{{ {'jts': job_templates, 'wjts': workflow_templates, 'schedules': schedules, 'notifications': notifications, 'placements': placements } | to_nice_json }}"
+
+- name: Create job templates
+  when: apply_changes | bool
+  loop: "{{ job_templates }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.job_template:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    organization: "{{ item.organization }}"
+    inventory: "{{ item.inventory }}"
+    project: "{{ item.project }}"
+    playbook: "{{ item.playbook }}"
+    execution_environment: "{{ item.execution_environment | default(omit) }}"
+    credentials: "{{ item.credentials | default(omit) }}"
+    survey_enabled: "{{ item.survey_enabled | default(false) }}"
+    survey_spec: "{{ item.survey_spec | default(omit) }}"
+    limit: "{{ item.limit | default(omit) }}"
+    forks: "{{ item.forks | default(omit) }}"
+    job_slice_count: "{{ item.job_slice_count | default(omit) }}"
+    state: present
+
+- name: Create workflow job templates
+  when: apply_changes | bool
+  loop: "{{ workflow_templates }}"
+  loop_control: { label: "{{ item.name | default(item) }}" }
+  ansible.controller.workflow_job_template:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name | default(item) }}"
+    organization: "{{ item.organization | default('Default') }}"
+    state: present
+
+- name: Create schedules
+  when: apply_changes | bool
+  loop: "{{ schedules }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.schedule:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    unified_job_template: "{{ item.template }}"
+    rrule: "{{ item.rrule }}"
+    state: present
+
+- name: Create notification templates
+  when: apply_changes | bool
+  loop: "{{ notifications }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.notification_template:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    organization: "{{ item.organization | default(omit) }}"
+    notification_type: "{{ item.type }}"
+    notification_configuration: "{{ item.configuration }}"
+    state: present
+
+- name: Apply instance group placements
+  when: apply_changes | bool
+  loop: "{{ placements }}"
+  loop_control: { label: "{{ item.job_template }} → {{ (item.instance_groups | join(',')) if (item.instance_groups|length>0) else 'default' }}" }
+  ansible.controller.job_template:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.job_template }}"
+    organization: "{{ item.organization | default(omit) }}"
+    instance_groups: "{{ item.instance_groups | default(omit) }}"
+    state: present

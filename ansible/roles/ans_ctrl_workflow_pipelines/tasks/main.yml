@@ -1,0 +1,52 @@
+
+---
+- name: Plan pipeline
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/wf_pipeline_plan.json"
+    mode: "0644"
+    content: "{{ {'name': wf_name, 'organization': organization, 'nodes': nodes, 'approvals': approvals } | to_nice_json }}"
+
+- name: Create WJT
+  when: apply_changes | bool
+  ansible.controller.workflow_job_template:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ wf_name }}"
+    organization: "{{ organization }}"
+    state: present
+
+- name: Build task nodes
+  when: apply_changes | bool
+  loop: "{{ nodes }}"
+  loop_control: { label: "{{ item.identifier }}" }
+  ansible.controller.workflow_job_template_node:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    workflow: "{{ wf_name }}"
+    identifier: "{{ item.identifier }}"
+    unified_job_template: "{{ item.template }}"
+    success_nodes: "{{ item.success_nodes | default([]) }}"
+    failure_nodes: "{{ item.failure_nodes | default([]) }}"
+    always_nodes: "{{ item.always_nodes | default([]) }}"
+    state: present
+
+- name: Build approval nodes
+  when: apply_changes | bool
+  loop: "{{ approvals }}"
+  loop_control: { label: "{{ item.identifier }}" }
+  ansible.controller.workflow_job_template_node:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    workflow: "{{ wf_name }}"
+    identifier: "{{ item.identifier }}"
+    approval_node: true
+    extra_data:
+      required_approvals: "{{ item.required_approvals | default(1) }}"
+      timeout: "{{ item.sla_minutes | default(120) }}"
+    success_nodes: "{{ item.success_nodes | default([]) }}"
+    failure_nodes: "{{ item.failure_nodes | default([]) }}"
+    always_nodes: "{{ item.always_nodes | default([]) }}"
+    state: present

@@ -1,0 +1,39 @@
+
+---
+- name: Plan guards
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/policy_guardrails_plan.json"
+    mode: "0644"
+    content: "{{ {'rbac': rbac_bindings, 'settings': controller_settings, 'signing': {'collections': collections_signed_only,'ee': ee_signature_required}, 'survey': survey_policies} | to_nice_json }}"
+
+- name: Apply RBAC bindings
+  when: apply_changes | bool
+  loop: "{{ rbac_bindings }}"
+  loop_control: { label: "{{ item.principal }} → {{ item.role }} on {{ item.object_type }} {{ item.object_name }}" }
+  ansible.controller.role:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    user: "{{ (item.kind == 'user') | ternary(item.principal, omit) }}"
+    team: "{{ (item.kind == 'team') | ternary(item.principal, omit) }}"
+    role: "{{ item.role }}"
+    target_organization: "{{ (item.object_type == 'organization') | ternary(item.object_name, omit) }}"
+    target_project: "{{ (item.object_type == 'project') | ternary(item.object_name, omit) }}"
+    target_inventory: "{{ (item.object_type == 'inventory') | ternary(item.object_name, omit) }}"
+    target_credential: "{{ (item.object_type == 'credential') | ternary(item.object_name, omit) }}"
+    target_job_template: "{{ (item.object_type == 'job_template') | ternary(item.object_name, omit) }}"
+    state: present
+
+- name: Apply controller settings
+  when: apply_changes | bool and (controller_settings | length > 0)
+  ansible.controller.settings:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    settings: "{{ controller_settings }}"
+
+- name: Emit survey policies (artifact only)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/survey_policies.json"
+    mode: "0644"
+    content: "{{ survey_policies | to_nice_json }}"

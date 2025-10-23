@@ -1,0 +1,38 @@
+
+---
+- name: Plan EE builds
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/ee_builds_plan.json"
+    mode: "0644"
+    content: "{{ ee_definitions | to_nice_json }}"
+
+- name: Build EEs with ansible-builder (best-effort)
+  when: apply_changes | bool
+  loop: "{{ ee_definitions }}"
+  loop_control: { label: "{{ item.name }} -> {{ item.image }}" }
+  ansible.builtin.shell: |
+    set -euo pipefail
+    tmpdir="$(mktemp -d)"
+    cd "$tmpdir"
+    printf "%s" "{{ item.bindep | default('') }}" > bindep.txt
+    printf "%s" "{{ item.python | default('') }}" > requirements.txt
+    printf "%s" "{{ item.galaxy | default('') }}" > requirements.yml
+    cat > execution-environment.yml <<'EE'
+    version: 3
+    images:
+      base_image:
+        name: "{{ item.base_image | default('quay.io/ansible/ansible-runner:stable-2.12-latest') }}"
+    dependencies:
+      galaxy: requirements.yml
+      python: requirements.txt
+      system: bindep.txt
+    EE
+    ansible-builder build -t "{{ item.image }}" || true
+  args: { executable: /bin/bash }
+  changed_when: false
+
+- name: Push image (optional)
+  when: apply_changes | bool and registry_push | bool
+  ansible.builtin.debug:
+    msg: "Push {{ item.image }} to registry (use container_login + podman/docker as needed)"
+  loop: "{{ ee_definitions }}"

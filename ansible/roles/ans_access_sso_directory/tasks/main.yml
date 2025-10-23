@@ -1,0 +1,34 @@
+
+---
+- name: Plan SSO
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/sso_plan.json"
+    mode: "0644"
+    content: "{{ sso_settings | to_nice_json }}"
+
+- name: Apply Controller SSO
+  when: apply_changes | bool and (sso_settings | length > 0)
+  ansible.controller.settings:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: true
+    settings: "{{ sso_settings }}"
+
+- name: Export principals/roles (access review)
+  when: access_reviews | bool
+  ansible.builtin.uri:
+    url: "{{ controller_host }}/api/v2/roles/"
+    method: GET
+    headers: { Authorization: "Bearer {{ controller_oauthtoken }}" }
+    validate_certs: true
+  register: roles
+
+- name: Write access matrix CSV (basic)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/access_review.csv"
+    mode: "0644"
+    content: |
+      name,role,resource
+      {% for r in roles.json.results | default([]) -%}
+      {{ r.summary_fields.user.username if r.summary_fields.user is defined else (r.summary_fields.team.name if r.summary_fields.team is defined else 'n/a') }},{{ r.name }},{{ r.summary_fields.resource_name | default('') }}
+      {% endfor %}

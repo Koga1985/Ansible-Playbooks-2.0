@@ -1,0 +1,20 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+ansible_cfg_path: ".ansible.cfg"
+forks_by_size:
+  small: 20
+  medium: 50
+  large: 100
+inventory_size: "small"
+strategy: "linear"
+ssh_config_path: "~/.ssh/config"
+control_path: "~/.ssh/ansible-%r@%h:%p"
+control_persist: "600s"
+placements: []
+controller_host: "https://controller.example.mil"
+controller_oauthtoken: "{{ lookup('env','TOWER_TOKEN') | default('') }}"

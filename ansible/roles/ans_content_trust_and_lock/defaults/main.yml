@@ -1,0 +1,12 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+allowlist: []
+blocklist: []
+requirements: "requirements.yml"
+lockfile_path: "{{ artifacts_dir }}/collections.lock"
+signing_service: {}

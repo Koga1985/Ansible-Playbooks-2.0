@@ -1,0 +1,28 @@
+
+---
+- name: Status check
+  ansible.builtin.uri:
+    url: "{{ ah_url }}/api/galaxy/pulp/api/v3/status/"
+    method: GET
+    force_basic_auth: true
+    url_username: "{{ ah_username }}"
+    url_password: "{{ ah_password }}"
+    validate_certs: true
+  register: status
+  failed_when: false
+
+- name: Write status artifact
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/pah_status.json"
+    mode: "0644"
+    content: "{{ status.json | default({'ok': false}) | to_nice_json }}"
+
+- name: NOTE
+  ansible.builtin.debug:
+    msg: "Use redhat_cop.ah_configuration to manage remotes/repos/groups/SSO. This role emits plans and runs provider modules when available."
+
+- name: Plan inputs
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/pah_bootstrap_plan.json"
+    mode: "0644"
+    content: "{{ {'sso': sso, 'groups': groups, 'remotes': remotes, 'promote_map': promote_map } | to_nice_json }}"

@@ -1,0 +1,14 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+controller_host: "https://controller.example.mil"
+controller_oauthtoken: "{{ lookup('env','TOWER_TOKEN') | default('') }}"
+validate_certs: true
+backup_path: "{{ artifacts_dir }}/controller_export.json"
+restore_guard_org: "Sandbox"
+audit_days: 1
+retention_days: 30

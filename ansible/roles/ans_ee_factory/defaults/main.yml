@@ -1,0 +1,9 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+ee_definitions: []   # [{name,image,context,bindep,python,galaxy,labels,sign:true}]
+registry_push: true

@@ -1,0 +1,42 @@
+
+---
+- name: Apply forks/strategy
+  when: apply_changes | bool
+  loop:
+    - { option: 'forks', value: '{{ forks_by_size[inventory_size] | default(20) }}' }
+    - { option: 'strategy', value: '{{ strategy }}' }
+  loop_control: { label: "{{ item.option }}" }
+  community.general.ini_file:
+    path: "{{ ansible_cfg_path }}"
+    section: defaults
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    no_extra_spaces: true
+    mode: "0644"
+
+- name: Configure SSH multiplexing
+  when: apply_changes | bool
+  ansible.builtin.blockinfile:
+    path: "{{ ssh_config_path }}"
+    mode: "0600"
+    create: true
+    block: |
+      Host *
+        ControlMaster auto
+        ControlPersist {{ control_persist }}
+        ControlPath {{ control_path }}
+        ServerAliveInterval 30
+        ServerAliveCountMax 10
+
+- name: Apply instance group placements
+  when: apply_changes | bool and (placements | length > 0)
+  loop: "{{ placements }}"
+  loop_control: { label: "{{ item.job_template }} → {{ (item.instance_groups | join(',')) if (item.instance_groups|length>0) else 'default' }}" }
+  ansible.controller.job_template:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: true
+    name: "{{ item.job_template }}"
+    organization: "{{ item.organization | default(omit) }}"
+    instance_groups: "{{ item.instance_groups | default(omit) }}"
+    state: present

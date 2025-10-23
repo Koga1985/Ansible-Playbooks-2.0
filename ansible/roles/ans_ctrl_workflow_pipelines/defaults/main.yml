@@ -1,0 +1,14 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+controller_host: "https://controller.example.mil"
+controller_oauthtoken: "{{ lookup('env','TOWER_TOKEN') | default('') }}"
+validate_certs: true
+wf_name: "pipeline-plan-approve-apply-verify"
+organization: "Default"
+nodes: []      # [{identifier, template, success_nodes, failure_nodes, always_nodes}]
+approvals: []  # [{identifier, required_approvals, sla_minutes, success_nodes, failure_nodes}]

@@ -1,0 +1,9 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+repos: []  # [{path: /src/collection1}, ...]
+collections: []

@@ -1,0 +1,23 @@
+
+---
+- name: Emit allow/block lists
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/collections_allowblock.json"
+    mode: "0644"
+    content: "{{ {'allow': allowlist, 'block': blocklist} | to_nice_json }}"
+
+- name: Generate lockfile from requirements (hash/pins)
+  ansible.builtin.command: >
+    ansible-galaxy collection install -r {{ requirements }} --lockfile {{ lockfile_path }} --requirements-file {{ requirements }}
+  changed_when: false
+
+- name: Check lockfile
+  ansible.builtin.stat:
+    path: "{{ lockfile_path }}"
+  register: lf
+
+- name: Assert lockfile exists
+  ansible.builtin.assert:
+    that: lf.stat.exists
+    success_msg: "Lockfile generated at {{ lockfile_path }}"
+    fail_msg: "Lockfile not generated"

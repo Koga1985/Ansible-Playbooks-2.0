@@ -1,0 +1,13 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+paths_extra: []
+retention_days: 30
+match_globs: ['*']
+exclude_globs: []
+max_total_size_gb: 0
+dry_run: true

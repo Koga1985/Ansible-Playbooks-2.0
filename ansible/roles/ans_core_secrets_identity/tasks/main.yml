@@ -1,0 +1,35 @@
+
+---
+- name: Find vaulted files
+  ansible.builtin.shell: |
+    set -euo pipefail
+    grep -rl "^\$ANSIBLE_VAULT;" "{{ repo_root }}" || true
+  args: { executable: /bin/bash }
+  register: vaulted
+  changed_when: false
+
+- name: Rekey vaulted files (guarded)
+  when: apply_changes | bool and (vaulted.stdout_lines | length > 0)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    while read -r f; do
+      [ -z "$f" ] && continue
+      ansible-vault rekey --vault-id {{ vault_id_label }}@prompt --new-vault-password-file {{ new_vault_password_file }} "$f"
+    done < <(printf "%s\n" {{ vaulted.stdout_lines | to_json }} | jq -r '.[]')
+  args: { executable: /bin/bash }
+
+- name: Encrypt plaintext files
+  when: apply_changes | bool
+  loop: "{{ files_to_encrypt }}"
+  loop_control: { label: "{{ item }}" }
+  ansible.builtin.shell: |
+    ansible-vault encrypt --vault-id {{ vault_id_label }}@prompt "{{ item }}"
+  args: { executable: /bin/bash }
+
+- name: Apply Controller SSO (settings)
+  when: apply_changes | bool and (sso_settings | length > 0)
+  ansible.controller.settings:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: true
+    settings: "{{ sso_settings }}"

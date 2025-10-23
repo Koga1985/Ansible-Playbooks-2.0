@@ -1,0 +1,15 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+controller_host: "https://controller.example.mil"
+controller_oauthtoken: "{{ lookup('env','TOWER_TOKEN') | default('') }}"
+validate_certs: true
+job_templates: []         # list of JT dicts
+workflow_templates: []    # list of WJT names (created empty, nodes via pipelines role)
+schedules: []             # list schedule objects
+notifications: []         # list notification templates
+placements: []            # JT→instance_groups mapping

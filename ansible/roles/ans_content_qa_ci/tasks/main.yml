@@ -1,0 +1,30 @@
+
+---
+- name: Plan
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/qa_plan.json"
+    mode: "0644"
+    content: "{{ {'repos': repos, 'collections': collections} | to_nice_json }}"
+
+- name: Lint & molecule (best-effort)
+  when: apply_changes | bool
+  loop: "{{ repos }}"
+  loop_control: { label: "{{ item.path }}" }
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ item.path }}"
+    ansible-lint -q || true
+    if [ -f molecule/default/molecule.yml ]; then molecule test || true; fi
+  args: { executable: /bin/bash }
+  changed_when: false
+
+- name: Deprecations report (module list)
+  when: apply_changes | bool
+  ansible.builtin.shell: |
+    set -euo pipefail
+    : > "{{ artifacts_dir }}/deprecations_report.txt"
+    for c in {{ collections | default([]) | join(' ') }}; do
+      ansible-doc -t module -l | grep "^$c\." || true
+    done >> "{{ artifacts_dir }}/deprecations_report.txt"
+  args: { executable: /bin/bash }
+  changed_when: false

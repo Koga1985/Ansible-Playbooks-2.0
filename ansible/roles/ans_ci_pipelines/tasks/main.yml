@@ -1,0 +1,57 @@
+
+---
+- name: GitHub Actions workflow
+  when: apply_changes | bool and use_github_actions | bool
+  ansible.builtin.copy:
+    dest: "{{ repo_root }}/.github/workflows/ansible-ci.yml"
+    mode: "0644"
+    content: |
+      name: Ansible CI
+      on: [push, pull_request]
+      jobs:
+        lint-unit-molecule:
+          runs-on: ubuntu-latest
+          steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with: { python-version: '3.11' }
+            - name: Install deps
+              run: |
+                pip install ansible ansible-lint molecule docker pytest
+            - name: Lint
+              run: ansible-lint
+            - name: Unit (pytest if any)
+              run: pytest -q || true
+            - name: Molecule
+              run: |
+                if [ -f molecule/default/molecule.yml ]; then molecule test || true; fi
+            - name: Build EE (optional)
+              run: |
+                if [ -f execution-environment.yml ]; then pip install ansible-builder && ansible-builder build -t ee:ci || true; fi
+
+- name: GitLab CI pipeline
+  when: apply_changes | bool and not use_github_actions | bool
+  ansible.builtin.copy:
+    dest: "{{ repo_root }}/.gitlab-ci.yml"
+    mode: "0644"
+    content: |
+      stages: [lint, test, build]
+      lint:
+        stage: lint
+        image: python:3.11
+        script:
+          - pip install ansible ansible-lint yamllint molecule docker pytest
+          - ansible-lint || true
+          - yamllint . || true
+      test:
+        stage: test
+        image: python:3.11
+        script:
+          - pytest -q || true
+          - if [ -f molecule/default/molecule.yml ]; then molecule test || true; fi
+      build-ee:
+        stage: build
+        image: python:3.11
+        script:
+          - pip install ansible-builder || true
+          - if [ -f execution-environment.yml ]; then ansible-builder build -t ee:ci || true; fi

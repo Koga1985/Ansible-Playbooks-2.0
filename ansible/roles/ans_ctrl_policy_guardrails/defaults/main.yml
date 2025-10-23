@@ -1,0 +1,15 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+controller_host: "https://controller.example.mil"
+controller_oauthtoken: "{{ lookup('env','TOWER_TOKEN') | default('') }}"
+validate_certs: true
+rbac_bindings: []      # [{kind: team|user, principal: TeamA, role: admin, object_type: organization, object_name: Default}, ...]
+controller_settings: {} # settings dict for ansible.controller.settings
+collections_signed_only: true
+ee_signature_required: true
+survey_policies: {}     # arbitrary policy doc emitted to artifact

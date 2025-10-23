@@ -1,0 +1,62 @@
+
+---
+- name: API ping
+  ansible.builtin.uri:
+    url: "{{ controller_host }}/api/v2/ping/"
+    method: GET
+    headers: { Authorization: "Bearer {{ controller_oauthtoken }}" }
+    validate_certs: "{{ validate_certs }}"
+  register: ping
+
+- name: Write ping artifact
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/api_ping.json"
+    mode: "0644"
+    content: "{{ ping.json | to_nice_json }}"
+
+- name: Export all resources
+  when: apply_changes | bool
+  community.general.tower_export:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    all: true
+    filename: "{{ backup_path }}"
+
+- name: Guard — not importing into production
+  when: apply_changes | bool
+  ansible.builtin.assert:
+    that: "restore_guard_org != 'production'"
+    fail_msg: "Refusing to import into production"
+    success_msg: "Proceeding with sandbox import"
+
+- name: Restore to sandbox (when provided)
+  when: apply_changes | bool and (backup_path is exists)
+  community.general.tower_import:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    state: present
+    assets: "{{ lookup('file', backup_path) | from_json }}"
+
+- name: Export recent jobs
+  ansible.builtin.uri:
+    url: "{{ controller_host }}/api/v2/jobs/?order_by=-finished"
+    method: GET
+    headers: { Authorization: "Bearer {{ controller_oauthtoken }}" }
+    validate_certs: "{{ validate_certs }}"
+  register: jobs
+
+- name: Write jobs JSON
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/jobs_recent.json"
+    mode: "0644"
+    content: "{{ jobs.json | to_nice_json }}"
+
+- name: Retention cleaner (artifacts_dir)
+  import_role:
+    name: ans_ops_artifacts_retention
+  vars:
+    retention_days: "{{ retention_days }}"
+    dry_run: "{{ not apply_changes | bool }}"
+    apply_changes: "{{ apply_changes }}"

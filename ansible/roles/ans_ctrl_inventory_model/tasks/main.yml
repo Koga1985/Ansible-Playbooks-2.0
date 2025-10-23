@@ -1,0 +1,140 @@
+
+---
+- name: Ensure artifacts directory
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory, mode: "0755" }
+
+- name: Plan — emit inputs
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/ctrl_inventory_model_plan.json"
+    mode: "0644"
+    content: "{{ {
+      'organizations': organizations,
+      'teams': teams,
+      'inventories': inventories,
+      'sources': sources,
+      'credentials': credentials,
+      'projects': projects,
+      'registries': registries,
+      'execution_environments': execution_environments
+    } | to_nice_json }}"
+
+- name: Create organizations
+  when: apply_changes | bool
+  loop: "{{ organizations }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.organization:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    description: "{{ item.description | default('') }}"
+    state: present
+
+- name: Create teams
+  when: apply_changes | bool
+  loop: "{{ teams }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.team:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    organization: "{{ item.organization | default(organization) }}"
+    description: "{{ item.description | default('') }}"
+    state: present
+
+- name: Create credentials
+  when: apply_changes | bool
+  loop: "{{ credentials }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.credential:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    description: "{{ item.description | default('') }}"
+    organization: "{{ item.organization | default(organization) }}"
+    credential_type: "{{ item.credential_type }}"
+    inputs: "{{ item.inputs | default({}) }}"
+    state: present
+
+- name: Create inventories
+  when: apply_changes | bool
+  loop: "{{ inventories }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.inventory:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    organization: "{{ item.organization | default(organization) }}"
+    description: "{{ item.description | default('') }}"
+    state: present
+
+- name: Create inventory sources
+  when: apply_changes | bool
+  loop: "{{ sources }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.inventory_source:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    inventory: "{{ item.inventory }}"
+    source: "{{ item.source }}"
+    source_vars: "{{ item.source_vars | default(omit) }}"
+    credential: "{{ item.credential | default(omit) }}"
+    update_on_launch: "{{ item.update_on_launch | default(true) }}"
+    overwrite: "{{ item.overwrite | default(false) }}"
+    overwrite_vars: "{{ item.overwrite_vars | default(false) }}"
+    state: present
+
+- name: Create projects
+  when: apply_changes | bool
+  loop: "{{ projects }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.project:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    organization: "{{ item.organization | default(organization) }}"
+    scm_type: git
+    scm_url: "{{ item.scm_url }}"
+    scm_branch: "{{ item.scm_branch | default('main') }}"
+    scm_clean: "{{ item.scm_clean | default(true) }}"
+    scm_update_on_launch: "{{ item.scm_update_on_launch | default(false) }}"
+    credential: "{{ item.credential | default(omit) }}"
+    state: present
+
+- name: Create container registry credentials (if needed)
+  when: apply_changes | bool
+  loop: "{{ registries }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.credential:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    organization: "{{ item.organization | default(organization) }}"
+    credential_type: "Container Registry"
+    inputs:
+      host: "{{ item.host }}"
+      username: "{{ item.username }}"
+      password: "{{ item.password }}"
+      verify_ssl: "{{ item.verify_ssl | default(true) }}"
+    state: present
+
+- name: Register execution environments
+  when: apply_changes | bool
+  loop: "{{ execution_environments }}"
+  loop_control: { label: "{{ item.name }}" }
+  ansible.controller.execution_environment:
+    controller_host: "{{ controller_host }}"
+    controller_oauthtoken: "{{ controller_oauthtoken }}"
+    validate_certs: "{{ validate_certs }}"
+    name: "{{ item.name }}"
+    image: "{{ item.image }}"
+    pull: "{{ item.pull | default('always') }}"
+    credential: "{{ item.registry_credential | default(omit) }}"
+    state: present

@@ -1,0 +1,36 @@
+
+---
+- name: Ensure junit dir
+  ansible.builtin.file: { path: "{{ junit_output_dir }}", state: directory, mode: "0755" }
+
+- name: Apply ansible.cfg defaults
+  when: apply_changes | bool
+  loop:
+    - { option: 'strategy', value: '{{ strategy }}' }
+    - { option: 'forks', value: '{{ forks }}' }
+    - { option: 'timeout', value: '{{ timeout }}' }
+    - { option: 'callbacks_enabled', value: '{{ callbacks_enabled | join(",") }}' }
+    - { option: 'stdout_callback', value: '{{ stdout_callback }}' }
+  loop_control: { label: "{{ item.option }}" }
+  community.general.ini_file:
+    path: "{{ ansible_cfg_path }}"
+    section: defaults
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    no_extra_spaces: true
+    mode: "0644"
+
+- name: Configure fact cache
+  when: apply_changes | bool
+  loop:
+    - { option: 'fact_caching', value: '{{ cache_backend }}' }
+    - { option: 'fact_caching_connection', value: '{{ cache_connection }}' }
+    - { option: 'fact_caching_timeout', value: '{{ cache_ttl }}' }
+  loop_control: { label: "{{ item.option }}" }
+  community.general.ini_file:
+    path: "{{ ansible_cfg_path }}"
+    section: defaults
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    no_extra_spaces: true
+    mode: "0644"

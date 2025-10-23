@@ -1,0 +1,17 @@
+---
+# Common defaults shared by most roles
+apply_changes: false              # guard: require explicit true for mutating actions
+artifacts_dir: "/tmp/ansible-artifacts"
+validate_certs: true
+
+
+ansible_cfg_path: ".ansible.cfg"
+strategy: "linear"
+forks: 20
+timeout: 30
+callbacks_enabled: ['timer','profile_tasks','junit']
+stdout_callback: "yaml"
+cache_backend: "redis"
+cache_connection: "redis://localhost:6379/0"
+cache_ttl: 86400
+junit_output_dir: "{{ artifacts_dir }}/junit"

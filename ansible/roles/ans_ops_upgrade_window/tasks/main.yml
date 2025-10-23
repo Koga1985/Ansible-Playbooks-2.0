@@ -1,0 +1,23 @@
+
+---
+- name: Preflight HTTP checks
+  ansible.builtin.uri:
+    url: "{{ item }}"
+    method: GET
+    headers: { Authorization: "Bearer {{ controller_oauthtoken }}" }
+    validate_certs: true
+  loop: "{{ preflight_urls }}"
+  register: preflights
+  failed_when: false
+
+- name: Write preflight artifacts
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/upgrade_preflights.json"
+    mode: "0644"
+    content: "{{ preflights.results | to_nice_json }}"
+
+- name: Publish maintenance banner (artifact only)
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/maintenance_banner.txt"
+    mode: "0644"
+    content: "{{ maintenance_banner }}"
