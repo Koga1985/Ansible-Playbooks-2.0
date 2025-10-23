@@ -1,0 +1,14 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Export active sessions (placeholder)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    echo "username,endpoint,method,nad,started" > "{{ export_csv }}"
+    echo "user1,00:11:22:33:44:55,802.1X,sw1,2025-10-21T10:00:00Z" >> "{{ export_csv }}"
+  args: { executable: /bin/bash }
+  changed_when: false
+- name: Guarded stale-session cleanup
+  when: apply_changes | bool and stale_cleanup.enabled | bool
+  ansible.builtin.debug:
+    msg: "Cleanup sessions older than {{ stale_cleanup.older_than_minutes }} minutes (guarded)"

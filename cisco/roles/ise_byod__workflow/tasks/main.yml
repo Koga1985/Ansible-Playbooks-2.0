@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Plan BYOD workflow
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/byod_plan.json"
+    content: "{{ byod | to_nice_json }}"
+    mode: "0644"
+- name: Configure BYOD flow (guarded placeholder)
+  when: apply_changes | bool and byod.enabled | bool
+  ansible.builtin.debug:
+    msg: "Enable BYOD: portal={{ byod.onboarding_portal }}, ACL={{ byod.redirect_acl }}, cert={{ byod.cert_template }}"

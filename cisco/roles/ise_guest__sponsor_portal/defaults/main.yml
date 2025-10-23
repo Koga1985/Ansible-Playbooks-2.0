@@ -1,0 +1,14 @@
+---
+apply_changes: false
+artifacts_dir: "/tmp/ise-artifacts"
+
+sponsor_portal:
+  name: "DefaultSponsorPortal"
+  sso:
+    enabled: false
+    idp_entity_id: ""
+    sso_url: ""
+    certificate_pem: ""
+  policies:
+    require_sponsor_approval: true
+    account_quota_per_sponsor: 50

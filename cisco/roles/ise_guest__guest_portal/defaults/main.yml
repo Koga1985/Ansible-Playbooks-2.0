@@ -1,0 +1,11 @@
+---
+apply_changes: false
+artifacts_dir: "/tmp/ise-artifacts"
+
+guest_portal:
+  name: "DefaultGuestPortal"
+  branding:
+    logo_path: ""
+    primary_color: "#005073"
+    terms_text: "By continuing, you agree to acceptable use."
+  auth_methods: ["self_reg", "sponsor_approved"]

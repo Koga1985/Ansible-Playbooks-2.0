@@ -1,0 +1,12 @@
+---
+- name: Run ise_sessions__export_active
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - cisco.ise
+    - community.general
+  vars_files:
+    - vars.example.yml
+  roles:
+    - role: ise_sessions__export_active

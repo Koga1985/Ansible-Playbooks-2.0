@@ -1,0 +1,10 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Export failed authentications (placeholder)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    echo "timestamp,username,endpoint,reason,nad" > "{{ export_csv }}"
+    echo "2025-10-22T12:00Z,user1,00:11:22:33:44:55,BadCredentials,sw1" >> "{{ export_csv }}"
+  args: { executable: /bin/bash }
+  changed_when: false

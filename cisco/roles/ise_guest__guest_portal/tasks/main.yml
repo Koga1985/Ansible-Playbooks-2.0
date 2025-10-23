@@ -1,0 +1,12 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Plan guest portal
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/guest_portal_plan.json"
+    content: "{{ guest_portal | to_nice_json }}"
+    mode: "0644"
+- name: Configure Guest portal (guarded placeholder)
+  when: apply_changes | bool
+  ansible.builtin.debug:
+    msg: "Configure Guest Portal {{ guest_portal.name }} (methods={{ guest_portal.auth_methods }})"

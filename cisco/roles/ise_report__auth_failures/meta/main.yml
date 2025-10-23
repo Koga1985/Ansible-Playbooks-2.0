@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: AutoGen
+  description: Self-contained drop-and-run role for Cisco ISE
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: GenericLinux
+      versions: ['all']
+dependencies: []

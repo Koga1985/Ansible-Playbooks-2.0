@@ -1,0 +1,14 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Plan endpoint moves
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/endpoints_move_plan.json"
+    content: "{{ moves | to_nice_json }}"
+    mode: "0644"
+- name: Move endpoints between groups (guarded placeholder)
+  when: apply_changes | bool
+  loop: "{{ moves }}"
+  loop_control: { label: "{{ item.mac }}" }
+  ansible.builtin.debug:
+    msg: "Move {{ item.mac }} to {{ item.to_group }}"

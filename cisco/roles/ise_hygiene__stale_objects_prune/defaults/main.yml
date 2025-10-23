@@ -1,0 +1,10 @@
+---
+apply_changes: false
+artifacts_dir: "/tmp/ise-artifacts"
+
+dry_run: true
+protected_names: ["Default","Any","DenyAll"]
+candidates:
+  sgt: []
+  sgacl: []
+  devices: []

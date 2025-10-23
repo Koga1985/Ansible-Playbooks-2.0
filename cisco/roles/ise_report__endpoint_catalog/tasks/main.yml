@@ -1,0 +1,14 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Export endpoint catalog (placeholder)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    echo "mac,group,sgt,portal" > "{{ export_csv }}"
+    echo "00:11:22:33:44:55,OT-HMI,OT-Trusted,Sponsor" >> "{{ export_csv }}"
+  args: { executable: /bin/bash }
+  changed_when: false
+- name: Drift vs SoT (placeholder compare)
+  when: drift_against_sot.enabled | bool and (drift_against_sot.sot_csv | length) > 0
+  ansible.builtin.debug:
+    msg: "Compare {{ export_csv }} against SoT {{ drift_against_sot.sot_csv }}"

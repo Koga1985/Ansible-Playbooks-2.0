@@ -1,0 +1,9 @@
+---
+apply_changes: false
+artifacts_dir: "/tmp/ise-artifacts"
+
+guest_accounts:
+  source_csv: ""
+  items: []
+  default_valid_days: 7
+export_csv: "{{ artifacts_dir }}/guest_accounts_created.csv"

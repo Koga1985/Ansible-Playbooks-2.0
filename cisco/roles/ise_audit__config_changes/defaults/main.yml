@@ -1,0 +1,6 @@
+---
+apply_changes: false
+artifacts_dir: "/tmp/ise-artifacts"
+
+since_minutes: 1440
+export_zip: "{{ artifacts_dir }}/ise_config_audit.zip"

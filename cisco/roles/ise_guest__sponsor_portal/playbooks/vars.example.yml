@@ -1,0 +1,6 @@
+---
+apply_changes: false
+sponsor_portal:
+  name: "PlantSponsorPortal"
+  sso: { enabled: false }
+  policies: { require_sponsor_approval: true, account_quota_per_sponsor: 25 }

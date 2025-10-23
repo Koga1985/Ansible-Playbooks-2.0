@@ -1,0 +1,30 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Plan stale object removals
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/stale_prune_plan.json"
+    content: "{{ candidates | to_nice_json }}"
+    mode: "0644"
+- name: Guarded deletion (dry-run supported)
+  when: apply_changes | bool and not dry_run
+  block:
+    - name: Delete SGTs
+      when: candidates.sgt | length > 0
+      loop: "{{ candidates.sgt }}"
+      ansible.builtin.debug:
+        msg: "Delete SGT {{ item }}"
+    - name: Delete SGACLs
+      when: candidates.sgacl | length > 0
+      loop: "{{ candidates.sgacl }}"
+      ansible.builtin.debug:
+        msg: "Delete SGACL {{ item }}"
+    - name: Delete Devices
+      when: candidates.devices | length > 0
+      loop: "{{ candidates.devices }}"
+      ansible.builtin.debug:
+        msg: "Delete Device {{ item }}"
+- name: Safety summary
+  ansible.builtin.debug:
+    msg: "Dry-run={{ dry_run }}; protected={{ protected_names }}"
+  changed_when: false

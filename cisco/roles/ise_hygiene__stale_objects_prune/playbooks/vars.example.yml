@@ -1,0 +1,7 @@
+---
+apply_changes: false
+dry_run: true
+candidates:
+  sgt: ["Legacy-Contractors"]
+  sgacl: []
+  devices: []

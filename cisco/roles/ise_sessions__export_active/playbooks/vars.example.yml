@@ -1,0 +1,3 @@
+---
+apply_changes: false
+stale_cleanup: { enabled: false, older_than_minutes: 120 }

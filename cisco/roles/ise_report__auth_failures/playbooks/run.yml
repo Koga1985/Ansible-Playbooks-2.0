@@ -1,0 +1,12 @@
+---
+- name: Run ise_report__auth_failures
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - cisco.ise
+    - community.general
+  vars_files:
+    - vars.example.yml
+  roles:
+    - role: ise_report__auth_failures

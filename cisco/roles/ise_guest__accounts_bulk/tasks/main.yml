@@ -1,0 +1,30 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Load guest accounts from CSV if provided
+  when: guest_accounts.source_csv | length > 0
+  community.general.read_csv:
+    path: "{{ guest_accounts.source_csv }}"
+  register: csv_accounts
+- name: Build combined account list
+  ansible.builtin.set_fact:
+    accounts_combined: >-
+      {{ (csv_accounts.list if (csv_accounts is defined) else []) + guest_accounts.items }}
+- name: Plan bulk accounts
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/guest_accounts_plan.json"
+    content: "{{ accounts_combined | default([]) | to_nice_json }}"
+    mode: "0644"
+- name: Create/time-box guest accounts (guarded placeholder)
+  when: apply_changes | bool and (accounts_combined | default([]) | length) > 0
+  loop: "{{ accounts_combined }}"
+  loop_control: { label: "{{ item.username | default(item.name | default('guest')) }}" }
+  ansible.builtin.debug:
+    msg: "Create guest {{ item.username | default(item.name) }} valid {{ item.valid_days | default(guest_accounts.default_valid_days) }} days"
+- name: Export created accounts CSV (artifact)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    echo "username,expiry" > "{{ export_csv }}"
+    echo "sample,2025-12-31T00:00:00Z" >> "{{ export_csv }}"
+  args: { executable: /bin/bash }
+  changed_when: false

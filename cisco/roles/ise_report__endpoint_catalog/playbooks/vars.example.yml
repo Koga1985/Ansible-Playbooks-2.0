@@ -1,0 +1,2 @@
+---
+drift_against_sot: { enabled: false, sot_csv: "" }

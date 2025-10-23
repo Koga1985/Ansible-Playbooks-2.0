@@ -1,0 +1,23 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Load endpoints from CSV if provided
+  when: endpoints.source_csv | length > 0
+  community.general.read_csv:
+    path: "{{ endpoints.source_csv }}"
+  register: csv_eps
+- name: Build combined endpoints list
+  ansible.builtin.set_fact:
+    eps_combined: >-
+      {{ (csv_eps.list if (csv_eps is defined) else []) + endpoints.items }}
+- name: Plan endpoint registration
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/endpoints_register_plan.json"
+    content: "{{ eps_combined | default([]) | to_nice_json }}"
+    mode: "0644"
+- name: Register endpoints (guarded placeholder)
+  when: apply_changes | bool and (eps_combined | default([]) | length) > 0
+  loop: "{{ eps_combined }}"
+  loop_control: { label: "{{ item.mac }}" }
+  ansible.builtin.debug:
+    msg: "Register endpoint {{ item.mac }} to group {{ item.group | default(endpoints.default_group) }}"

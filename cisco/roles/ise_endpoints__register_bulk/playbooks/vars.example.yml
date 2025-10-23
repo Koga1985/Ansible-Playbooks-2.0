@@ -1,0 +1,6 @@
+---
+apply_changes: false
+endpoints:
+  items:
+    - { mac: "00:11:22:33:44:55", description: "HMI-1", group: "OT-HMI" }
+    - { mac: "AA:BB:CC:DD:EE:FF", description: "Contractor-Laptop", group: "Guests" }

@@ -1,0 +1,8 @@
+---
+apply_changes: false
+artifacts_dir: "/tmp/ise-artifacts"
+
+export_csv: "{{ artifacts_dir }}/endpoint_catalog.csv"
+drift_against_sot:
+  enabled: false
+  sot_csv: ""

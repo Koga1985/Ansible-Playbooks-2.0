@@ -1,0 +1,16 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Emit change log CSV (placeholder)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    echo "when,who,object,action" > "{{ artifacts_dir }}/config_changes.csv"
+    echo "2025-10-22T11:00Z,admin,PolicySet,UPDATE" >> "{{ artifacts_dir }}/config_changes.csv"
+  args: { executable: /bin/bash }
+  changed_when: false
+- name: Bundle audit artifacts
+  community.general.archive:
+    path:
+      - "{{ artifacts_dir }}/config_changes.csv"
+    dest: "{{ export_zip }}"
+    format: zip

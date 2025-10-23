@@ -1,0 +1,6 @@
+---
+apply_changes: false
+artifacts_dir: "/tmp/ise-artifacts"
+
+policy_sets: ["Wired_8021X","Wireless_EAP","VPN_Remote"]
+nad_samples: []

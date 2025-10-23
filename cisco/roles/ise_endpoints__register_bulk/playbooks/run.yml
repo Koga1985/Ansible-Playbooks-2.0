@@ -1,0 +1,12 @@
+---
+- name: Run ise_endpoints__register_bulk
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - cisco.ise
+    - community.general
+  vars_files:
+    - vars.example.yml
+  roles:
+    - role: ise_endpoints__register_bulk

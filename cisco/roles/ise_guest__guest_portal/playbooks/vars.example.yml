@@ -1,0 +1,9 @@
+---
+apply_changes: false
+guest_portal:
+  name: "Visitors-East-Plant"
+  branding:
+    logo_path: ""
+    primary_color: "#004b8d"
+    terms_text: "Corporate Acceptable Use Policy applies."
+  auth_methods: ["self_reg", "sponsor_approved"]

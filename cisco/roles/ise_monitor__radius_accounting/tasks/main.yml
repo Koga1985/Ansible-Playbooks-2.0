@@ -1,0 +1,20 @@
+---
+- name: Ensure artifacts
+  ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
+- name: Plan RADIUS accounting enforcement
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/radius_accounting_plan.json"
+    content: "{{ {'policy_sets': policy_sets, 'nad_samples': nad_samples} | to_nice_json }}"
+    mode: "0644"
+- name: Enforce accounting on policy sets (guarded placeholder)
+  when: apply_changes | bool
+  loop: "{{ policy_sets }}"
+  loop_control: { label: "{{ item }}" }
+  ansible.builtin.debug:
+    msg: "Ensure RADIUS accounting enabled on policy set {{ item }}"
+- name: Verify on sample NADs (optional)
+  when: apply_changes | bool and (nad_samples | length) > 0
+  loop: "{{ nad_samples }}"
+  loop_control: { label: "{{ item }}" }
+  ansible.builtin.debug:
+    msg: "Verify accounting packets received from NAD {{ item }}"

@@ -1,0 +1,6 @@
+---
+apply_changes: false
+guest_accounts:
+  items:
+    - { username: "contractor01", password: "TempPass#1", valid_days: 5 }
+    - { username: "visitorA", password: "Welcome123!", valid_days: 2 }

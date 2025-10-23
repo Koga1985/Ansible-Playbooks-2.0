@@ -1,0 +1,9 @@
+---
+apply_changes: false
+artifacts_dir: "/tmp/ise-artifacts"
+
+byod:
+  enabled: true
+  redirect_acl: "ACL-BYOD-REDIRECT"
+  cert_template: "BYOD-Cert-Template"
+  onboarding_portal: "BYOD-Portal"

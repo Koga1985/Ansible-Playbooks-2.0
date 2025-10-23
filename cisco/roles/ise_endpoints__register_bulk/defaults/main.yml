@@ -1,0 +1,8 @@
+---
+apply_changes: false
+artifacts_dir: "/tmp/ise-artifacts"
+
+endpoints:
+  source_csv: ""
+  items: []
+  default_group: "Unknown"
