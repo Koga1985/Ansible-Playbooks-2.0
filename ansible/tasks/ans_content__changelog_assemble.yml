@@ -5,44 +5,144 @@
   gather_facts: false
 
   vars:
-    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
-    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
-    validate_certs: "{{ validate_certs | default(true) }}"
     artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
     apply_changes: "{{ apply_changes | default(false) }}"
+    # Expect a list of dicts like: repos=[{"path":"/repo1"}, {"path":"./role_foo"}]
+    repos: "{{ repos | default([]) }}"
 
   pre_tasks:
-    - name: Ensure artifacts directory
+    - name: Ensure artifacts directory (least privilege)
       ansible.builtin.file:
         path: "{{ artifacts_dir }}"
         state: directory
-        mode: "0755"
+        mode: "0750"
 
-vars:
-  repos: "{{ repos | default([]) }}"
-tasks:
-  - name: Plan changelog assembly
-    ansible.builtin.copy:
-      dest: "{{ artifacts_dir }}/changelog_plan.json"
-      mode: "0644"
-      content: "{{ repos | to_nice_json }}"
+    - name: Validate repos is a list
+      ansible.builtin.assert:
+        that:
+          - repos is iterable
+        fail_msg: "repos must be a list of objects with a 'path' key."
 
-  - name: Assemble CHANGELOG bundle
-    when: apply_changes | bool
-    ansible.builtin.shell: |
-      set -euo pipefail
-      out="{{ artifacts_dir }}/changelogs_bundle.txt"
-      : > "$out"
-      for r in {{ repos | map(attribute='path') | list | join(' ') }}; do
-        echo "=== $(basename "$r") ===" >> "$out"
-        if [ -f "$r/CHANGELOG.md" ]; then
-          sed -n '1,200p' "$r/CHANGELOG.md" >> "$out"
-        elif [ -f "$r/CHANGELOG.rst" ]; then
-          sed -n '1,200p' "$r/CHANGELOG.rst" >> "$out"
-        else
-          echo "No changelog found" >> "$out"
-        fi
-        echo "" >> "$out"
-      done
-    args: { executable: /bin/bash }
-    changed_when: false
+    - name: Validate each repo item has a 'path'
+      ansible.builtin.assert:
+        that:
+          - item.path is defined
+          - item.path | length > 0
+        fail_msg: "Each repos[] item must have a non-empty 'path'."
+      loop: "{{ repos }}"
+
+  tasks:
+    - name: Gather repo path stats (no symlink following)
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+        follow: false
+      loop: "{{ repos }}"
+      register: repo_stats
+
+    - name: Assert repo paths exist and are directories (and not symlinks)
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isdir
+          - not item.stat.islnk
+        fail_msg: "Invalid repo path: {{ item.stat.path }} (must exist, be a directory, and not be a symlink)."
+      loop: "{{ repo_stats.results }}"
+
+    - name: Initialize bundle parts
+      ansible.builtin.set_fact:
+        bundle_parts: []
+
+    - name: For each repo, pick a changelog file if present
+      vars:
+        repo_path: "{{ item.stat.path }}"
+        candidate_files:
+          - "{{ repo_path }}/CHANGELOG.md"
+          - "{{ repo_path }}/CHANGELOG.rst"
+          - "{{ repo_path }}/changelog.md"
+      ansible.builtin.set_fact:
+        selected_changelog: >-
+          {{
+            (candidate_files | select('fileglob') | select('ansible.builtin.file_exists') | list) | first
+            if (candidate_files | select('fileglob') | select('ansible.builtin.file_exists') | list) | length > 0
+            else None
+          }}
+      loop: "{{ repo_stats.results }}"
+      loop_control:
+        label: "{{ item.stat.path }}"
+      register: chosen
+
+    - name: Read and append changelog snippet (first 200 lines) or placeholder
+      vars:
+        repo_path: "{{ item.0.stat.path }}"
+        chosen_path: "{{ item.1.ansible_facts.selected_changelog }}"
+        header: "=== {{ (repo_path | basename) }} ===\n"
+      block:
+        - name: Slurp changelog
+          when: chosen_path is not none
+          ansible.builtin.slurp:
+            path: "{{ chosen_path }}"
+          register: sl
+
+        - name: Add entry with snippet
+          when: chosen_path is not none
+          ansible.builtin.set_fact:
+            bundle_parts: >-
+              {{
+                bundle_parts
+                + [
+                    header
+                    + ((sl.content | b64decode).splitlines()[0:200] | join('\n'))
+                    + "\n\n"
+                  ]
+              }}
+
+        - name: Add placeholder when no changelog
+          when: chosen_path is none
+          ansible.builtin.set_fact:
+            bundle_parts: "{{ bundle_parts + [ header + 'No changelog found\n\n' ] }}"
+      loop: "{{ zip(repo_stats.results, chosen.results) | list }}"
+      loop_control:
+        label: "{{ item.0.stat.path }}"
+
+    - name: Compose final bundle content
+      ansible.builtin.set_fact:
+        bundle_content: "{{ bundle_parts | join('') }}"
+
+    - name: Write plan (always) with declared repos
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/changelog_plan.json"
+        mode: "0640"
+        owner: root
+        group: root
+        content: "{{ repos | to_nice_json }}"
+
+    - name: Write changelogs bundle (only when applying)
+      when: apply_changes | bool
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/changelogs_bundle.txt"
+        mode: "0640"
+        owner: root
+        group: root
+        backup: true
+        content: "{{ bundle_content }}"
+
+    - name: Show preview (dry run)
+      when: not apply_changes | bool
+      ansible.builtin.debug:
+        msg: "{{ (bundle_content | truncate(1000, end='\\n[...truncated...]')) if bundle_content else 'No content gathered' }}"
+
+    - name: Compute checksum
+      when: apply_changes | bool
+      ansible.builtin.stat:
+        path: "{{ artifacts_dir }}/changelogs_bundle.txt"
+        checksum_algorithm: sha256
+      register: bundle_stat
+
+    - name: Write checksum sidecar
+      when: apply_changes | bool
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/changelogs_bundle.txt.sha256"
+        mode: "0640"
+        owner: root
+        group: root
+        content: "{{ bundle_stat.stat.checksum }}  changelogs_bundle.txt\n"
