@@ -5,47 +5,159 @@
   gather_facts: false
 
   vars:
-    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
-    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
-    validate_certs: "{{ validate_certs | default(true) }}"
     artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
     apply_changes: "{{ apply_changes | default(false) }}"
+    # Expect: repos=[{"path":"/path/to/repo1"},{"path":"./role_foo"}]
+    repos: "{{ repos | default([]) }}"
+    fail_on_error: "{{ fail_on_error | default(true) }}"
 
   pre_tasks:
-    - name: Ensure artifacts directory
+    - name: Ensure artifacts directory (least privilege)
       ansible.builtin.file:
         path: "{{ artifacts_dir }}"
         state: directory
-        mode: "0755"
+        mode: "0750"
 
-vars:
-  repos: "{{ repos | default([]) }}"
-tasks:
-  - name: Plan lint/molecule repos
-    ansible.builtin.copy:
-      dest: "{{ artifacts_dir }}/lint_molecule_plan.json"
-      mode: "0644"
-      content: "{{ repos | to_nice_json }}"
+    - name: Validate repos is a list with path keys
+      ansible.builtin.assert:
+        that:
+          - repos is iterable
+          - repos | length > 0
+          - repos | map(attribute='path') | select('string') | list | length == (repos | length)
+        fail_msg: "Provide repos as a list of dicts with a 'path' string, e.g., repos=[{'path':'/repo1'}]."
 
-  - name: Run ansible-lint and molecule test for each repo
-    when: apply_changes | bool
-    loop: "{{ repos }}"
-    loop_control: { label: "{{ item.path }}" }
-    ansible.builtin.shell: |
-      set -euo pipefail
-      cd "{{ item.path }}"
-      ansible-lint -q || true
-      if [ -f molecule/default/molecule.yml ]; then
-        molecule test || true
-      fi
-    args: { executable: /bin/bash }
-    register: lintres
-    changed_when: false
+  tasks:
+    - name: Stat each repo (no symlink follow)
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+        follow: false
+      loop: "{{ repos }}"
+      register: repo_stats
 
-  - name: Write lint/molecule summary
-    ansible.builtin.copy:
-      dest: "{{ artifacts_dir }}/lint_molecule_summary.txt"
-      mode: "0644"
-      content: |
-        Results per repo (see job stdout for details)
-        {{ (repos | map(attribute='path') | list) | join(', ') }}
+    - name: Assert each repo exists, is a directory, not a symlink
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isdir
+          - not item.stat.islnk
+        fail_msg: "Invalid repo path: {{ item.stat.path }} (must exist, be a directory, and not a symlink)."
+      loop: "{{ repo_stats.results }}"
+
+    - name: Write plan (always)
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/lint_molecule_plan.json"
+        mode: "0640"
+        content: "{{ repos | to_nice_json }}"
+
+    - name: Check for ansible-lint presence
+      ansible.builtin.command: ansible-lint --version
+      register: lint_ver
+      changed_when: false
+      failed_when: false
+
+    - name: Check for molecule presence
+      ansible.builtin.command: molecule --version
+      register: mol_ver
+      changed_when: false
+      failed_when: false
+
+    - name: Initialize results
+      ansible.builtin.set_fact:
+        lm_results: []
+
+    - name: Lint + Molecule per repo
+      when: apply_changes | bool
+      vars:
+        repo_path: "{{ item.stat.path }}"
+      block:
+        - name: Determine if repo has molecule/default scenario
+          ansible.builtin.stat:
+            path: "{{ repo_path }}/molecule/default/molecule.yml"
+            follow: false
+          register: has_molecule
+
+        - name: Run ansible-lint
+          ansible.builtin.command:
+            cmd: ansible-lint -q
+            chdir: "{{ repo_path }}"
+          register: lint_run
+          changed_when: false
+          failed_when: false
+
+        - name: Run molecule test (if scenario exists and molecule installed)
+          when: has_molecule.stat.exists and mol_ver.rc == 0
+          ansible.builtin.command:
+            cmd: molecule test
+            chdir: "{{ repo_path }}"
+          register: mol_run
+          changed_when: false
+          failed_when: false
+
+        - name: Append result for this repo
+          ansible.builtin.set_fact:
+            lm_results: >-
+              {{ lm_results + [ {
+                  'path': repo_path,
+                  'ansible_lint': {
+                    'rc': lint_run.rc | default(127),
+                    'stdout': (lint_run.stdout | default(''))[:2000],
+                    'stderr': (lint_run.stderr | default(''))[:2000]
+                  },
+                  'molecule': {
+                    'skipped': (not has_molecule.stat.exists) or (mol_ver.rc != 0),
+                    'rc': (mol_run.rc | default(0)) if (has_molecule.stat.exists and mol_ver.rc == 0) else None,
+                    'stdout': (mol_run.stdout | default(''))[:2000] if (has_molecule.stat.exists and mol_ver.rc == 0) else '',
+                    'stderr': (mol_run.stderr | default(''))[:2000] if (has_molecule.stat.exists and mol_ver.rc == 0) else ''
+                  }
+                } ] }}
+
+      loop: "{{ repo_stats.results }}"
+      loop_control:
+        label: "{{ item.stat.path }}"
+
+    - name: Write JSON summary
+      when: apply_changes | bool
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/lint_molecule_summary.json"
+        mode: "0640"
+        content: "{{ lm_results | to_nice_json }}"
+
+    - name: Write text summary
+      when: apply_changes | bool
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/lint_molecule_summary.txt"
+        mode: "0640"
+        content: |
+          Ansible-lint & Molecule summary
+          {{ 'ansible-lint: ' ~ (lint_ver.stdout | default('not found')) }}
+          {{ 'molecule: ' ~ (mol_ver.stdout | default('not found')) }}
+
+          {% for r in lm_results %}
+          === {{ r.path }} ===
+          ansible-lint: rc={{ r.ansible_lint.rc }} {{ 'OK' if r.ansible_lint.rc == 0 else 'FAIL' }}
+          molecule: {% if r.molecule.skipped %}SKIPPED{% else %}rc={{ r.molecule.rc }} {{ 'OK' if r.molecule.rc == 0 else 'FAIL' }}{% endif %}
+          {% endfor %}
+
+    - name: Compute checksum for JSON
+      when: apply_changes | bool
+      ansible.builtin.stat:
+        path: "{{ artifacts_dir }}/lint_molecule_summary.json"
+        checksum_algorithm: sha256
+      register: sum_json
+
+    - name: Write checksum sidecar
+      when: apply_changes | bool
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/lint_molecule_summary.json.sha256"
+        mode: "0640"
+        content: "{{ sum_json.stat.checksum }}  lint_molecule_summary.json\n"
+
+    - name: Optionally fail the play if any repo failed
+      when: apply_changes | bool and fail_on_error | bool
+      ansible.builtin.assert:
+        that:
+          - lm_results | selectattr('ansible_lint.rc','eq',0) | list | length == (lm_results | length)
+          - lm_results | selectattr('molecule.skipped','equalto',True) | list | length
+            + (lm_results | selectattr('molecule.rc','defined') | selectattr('molecule.rc','eq',0) | list | length)
+            == (lm_results | length)
+        fail_msg: "One or more repos failed lint or molecule. See {{ artifacts_dir }}/lint_molecule_summary.json"
