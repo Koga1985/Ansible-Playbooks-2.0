@@ -1,5 +1,5 @@
 ---
-- name: ans_ci__pipeline_scaffold.yml
+- name: Scaffold CI for Ansible repo (GitHub Actions or GitLab CI)
   hosts: localhost
   connection: local
   gather_facts: false
@@ -7,69 +7,136 @@
   vars:
     artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-core-artifacts') }}"
     apply_changes: "{{ apply_changes | default(false) }}"
+    repo_root: "{{ repo_root | default('.') }}"
+    use_github_actions: "{{ use_github_actions | default(true) }}"
 
   pre_tasks:
-    - name: Ensure artifacts directory
+    - name: Ensure artifacts directory exists
       ansible.builtin.file:
         path: "{{ artifacts_dir }}"
         state: directory
         mode: "0755"
 
-vars:
-  repo_root: "{{ repo_root | default('.') }}"
-  use_github_actions: "{{ use_github_actions | default(true) }}"
-tasks:
-  - name: Create GitHub Actions workflow
-    when: apply_changes | bool and use_github_actions | bool
-    ansible.builtin.copy:
-      dest: "{{ repo_root }}/.github/workflows/ansible-ci.yml"
-      mode: "0644"
-      content: |
-        name: Ansible CI
-        on: [push, pull_request]
-        jobs:
-          lint-unit-molecule:
-            runs-on: ubuntu-latest
-            steps:
-              - uses: actions/checkout@v4
-              - uses: actions/setup-python@v5
-                with: { python-version: '3.11' }
-              - name: Install deps
-                run: |
-                  pip install ansible ansible-lint molecule docker pytest
-              - name: Lint
-                run: ansible-lint
-              - name: Unit (pytest if any)
-                run: pytest -q || true
-              - name: Molecule
-                run: |
-                  if [ -f molecule/default/molecule.yml ]; then molecule test || true; fi
-              - name: Build EE (optional)
-                run: |
-                  if [ -f execution-environment.yml ]; then pip install ansible-builder && ansible-builder build -t ee:ci || true; fi
-  - name: Create GitLab CI pipeline
-    when: apply_changes | bool and not use_github_actions | bool
-    ansible.builtin.copy:
-      dest: "{{ repo_root }}/.gitlab-ci.yml"
-      mode: "0644"
-      content: |
-        stages: [lint, test, build]
-        lint:
-          stage: lint
+  tasks:
+    - name: Create GitHub Actions workflow
+      when: apply_changes | bool and use_github_actions | bool
+      ansible.builtin.copy:
+        dest: "{{ repo_root }}/.github/workflows/ansible-ci.yml"
+        mode: "0644"
+        content: |
+          name: Ansible CI
+          on:
+            pull_request:
+            push:
+              branches: [ main, master ]
+          permissions:
+            contents: read
+          jobs:
+            lint-test:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - uses: actions/setup-python@v5
+                  with:
+                    python-version: '3.11'
+                    cache: 'pip'
+                - name: Install dependencies
+                  run: |
+                    python -m pip install --upgrade pip
+                    pip install \
+                      "ansible>=9,<13" \
+                      "ansible-lint>=25,<26" \
+                      "pytest>=8,<9" \
+                      "yamllint>=1.35,<2" \
+                      "molecule>=6,<7" \
+                      "molecule-plugins[docker]>=24,<25"
+                - name: Lint (ansible-lint)
+                  run: ansible-lint
+                - name: Lint (yamllint)
+                  run: yamllint .
+                - name: Unit tests (pytest)
+                  run: |
+                    if compgen -G "tests/test_*.py" > /dev/null; then pytest -q; else echo "No unit tests"; fi
+                - name: Molecule (Docker)
+                  env:
+                    MOLECULE_NO_LOG: "false"
+                  run: |
+                    if [ -f molecule/default/molecule.yml ]; then molecule test; else echo "No Molecule scenario"; fi
+
+            build-ee:
+              if: ${{ always() }}
+              runs-on: ubuntu-latest
+              needs: [lint-test]
+              steps:
+                - uses: actions/checkout@v4
+                - uses: actions/setup-python@v5
+                  with:
+                    python-version: '3.11'
+                    cache: 'pip'
+                - name: Build Execution Environment (optional)
+                  run: |
+                    if [ -f execution-environment.yml ] || [ -f ansible-builder.yml ]; then
+                      python -m pip install --upgrade pip
+                      pip install "ansible-builder>=3,<4"
+                      ansible-builder build -t ghcr.io/${{ github.repository_owner }}/ee:ci
+                    else
+                      echo "No execution-environment.yml found"
+                    fi
+
+    - name: Create GitLab CI pipeline
+      when: apply_changes | bool and not use_github_actions | bool
+      ansible.builtin.copy:
+        dest: "{{ repo_root }}/.gitlab-ci.yml"
+        mode: "0644"
+        content: |
           image: python:3.11
-          script:
-            - pip install ansible ansible-lint yamllint molecule docker pytest
-            - ansible-lint || true
-            - yamllint . || true
-        test:
-          stage: test
-          image: python:3.11
-          script:
-            - pytest -q || true
-            - if [ -f molecule/default/molecule.yml ]; then molecule test || true; fi
-        build-ee:
-          stage: build
-          image: python:3.11
-          script:
-            - pip install ansible-builder || true
-            - if [ -f execution-environment.yml ]; then ansible-builder build -t ee:ci || true; fi
+
+          variables:
+            PIP_DISABLE_PIP_VERSION_CHECK: "1"
+            PIP_NO_COLOR: "1"
+            PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+            DOCKER_TLS_CERTDIR: ""    # allow docker:dind without TLS
+            PYTHONDONTWRITEBYTECODE: "1"
+
+          cache:
+            paths:
+              - .pip-cache/
+
+          services:
+            - name: docker:dind
+              command: ["--mtu=1460"]
+
+          stages: [lint, test, build]
+
+          before_script:
+            - python -m pip install --upgrade pip
+            - pip install \
+                "ansible>=9,<13" \
+                "ansible-lint>=25,<26" \
+                "pytest>=8,<9" \
+                "yamllint>=1.35,<2" \
+                "molecule>=6,<7" \
+                "molecule-plugins[docker]>=24,<25"
+            - apt-get update && apt-get install -y --no-install-recommends docker.io && rm -rf /var/lib/apt/lists/*
+
+          lint:
+            stage: lint
+            script:
+              - ansible-lint
+              - yamllint .
+
+          test:
+            stage: test
+            script:
+              - if compgen -G "tests/test_*.py" > /dev/null; then pytest -q; else echo "No unit tests"; fi
+              - if [ -f molecule/default/molecule.yml ]; then molecule test; else echo "No Molecule scenario"; fi
+
+          build-ee:
+            stage: build
+            script:
+              - if [ -f execution-environment.yml ] || [ -f ansible-builder.yml ]; then
+                  pip install "ansible-builder>=3,<4" &&
+                  ansible-builder build -t ${CI_REGISTRY_IMAGE:-ee}:ci ;
+                else
+                  echo "No execution-environment.yml found" ;
+                fi
