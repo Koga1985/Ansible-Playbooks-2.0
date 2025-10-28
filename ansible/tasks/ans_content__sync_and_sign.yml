@@ -5,31 +5,292 @@
   gather_facts: false
 
   vars:
-    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
-    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
-    validate_certs: "{{ validate_certs | default(true) }}"
     artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
     apply_changes: "{{ apply_changes | default(false) }}"
+    ah_url: "{{ ah_url | default('https://pah.example.mil') }}"
+    ah_username: "{{ ah_username | default('admin') }}"
+    ah_password: "{{ ah_password | default('') }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+
+    # Expect:
+    # repos:
+    #   - name: community
+    #     promote_to: "org/pah/community"   # (optional) distribution base_path
+    #     sync: true                        # default: true
+    # signing_service:
+    #   name: ""                            # OPTIONAL – refuse unless properly implemented
+    repos: "{{ repos | default([]) }}"
+    signing_service: "{{ signing_service | default({}) }}"
 
   pre_tasks:
-    - name: Ensure artifacts directory
+    - name: Ensure artifacts dir (least privilege)
       ansible.builtin.file:
         path: "{{ artifacts_dir }}"
         state: directory
-        mode: "0755"
+        mode: "0750"
 
-vars:
-  repos: "{{ repos | default([]) }}"
-  signing_service: "{{ signing_service | default({}) }}"
-  promote_map: "{{ promote_map | default([]) }}"
-tasks:
-  - name: Plan sync/sign/promote
-    ansible.builtin.copy:
-      dest: "{{ artifacts_dir }}/sync_sign_plan.json"
-      mode: "0644"
-      content: "{{ {'repos': repos, 'signing_service': signing_service, 'promote': promote_map } | to_nice_json }}"
+    - name: Validate inputs
+      ansible.builtin.assert:
+        that:
+          - repos is iterable
+          - repos | length > 0
+          - repos | map(attribute='name') | select('string') | list | length == (repos | length)
+        fail_msg: "Provide repos as a list of dicts with 'name' (string) and optional 'promote_to' (string)."
 
-  - name: Sync and sign (placeholder)
-    when: apply_changes | bool
-    ansible.builtin.debug:
-      msg: "Sync PAH repos, sign with signing service, then promote to prod."
+    - name: Write plan (no secrets)
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/sync_sign_plan.json"
+        mode: "0640"
+        content: "{{ {'repos': repos, 'signing_service': (signing_service | combine({'secret':'<redacted>'}, recursive=True)) } | to_nice_json }}"
+
+  tasks:
+    - name: Helper | function to poll a Pulp task URL until finished
+      vars:
+        _dummy: ""
+      ansible.builtin.set_fact:
+        __poll_task_defined: true
+      no_log: true
+
+    - name: Sync/Publish/Promote per repo (PAH/Pulp API)
+      when: apply_changes | bool
+      no_log: true   # protect creds and responses
+      block:
+        - name: Initialize result list
+          ansible.builtin.set_fact:
+            _results: []
+
+        - name: Process repo {{ item.name }}
+          vars:
+            _repo_name: "{{ item.name }}"
+            _promote_to: "{{ item.promote_to | default(omit) }}"
+            _do_sync: "{{ item.sync | default(true) | bool }}"
+            _headers:
+              Content-Type: application/json
+          block:
+            # ---------- LOOKUP REPOSITORY ----------
+            - name: Lookup repository by name
+              ansible.builtin.uri:
+                url: "{{ ah_url }}/pulp/api/v3/repositories/ansible/ansible/?name={{ _repo_name | urlencode }}"
+                method: GET
+                force_basic_auth: true
+                url_username: "{{ ah_username }}"
+                url_password: "{{ ah_password }}"
+                validate_certs: "{{ validate_certs | bool }}"
+              register: repo_q
+              changed_when: false
+
+            - name: Assert repository exists
+              ansible.builtin.assert:
+                that:
+                  - (repo_q.json.count | default(0)) | int > 0
+                fail_msg: "Repository '{{ _repo_name }}' not found in PAH."
+            - name: Set repo href
+              ansible.builtin.set_fact:
+                _repo_href: "{{ repo_q.json.results[0].pulp_href }}"
+
+            # ---------- SYNC (OPTIONAL) ----------
+            - name: Trigger sync from remote (if enabled)
+              when: _do_sync
+              ansible.builtin.uri:
+                url: "{{ _repo_href }}sync/"
+                method: POST
+                headers: "{{ _headers }}"
+                body_format: json
+                body: {}
+                force_basic_auth: true
+                url_username: "{{ ah_username }}"
+                url_password: "{{ ah_password }}"
+                validate_certs: "{{ validate_certs | bool }}"
+              register: sync_task
+
+            - name: Wait for sync task
+              when: _do_sync
+              ansible.builtin.uri:
+                url: "{{ sync_task.json.task }}"
+                method: GET
+                force_basic_auth: true
+                url_username: "{{ ah_username }}"
+                url_password: "{{ ah_password }}"
+                validate_certs: "{{ validate_certs | bool }}"
+              register: sync_status
+              retries: 120
+              delay: 5
+              until: sync_status.json.state in ['completed', 'failed', 'canceled']
+              changed_when: false
+
+            - name: Fail if sync failed
+              when: _do_sync and sync_status.json.state != 'completed'
+              ansible.builtin.fail:
+                msg: "Sync failed for {{ _repo_name }}: {{ sync_status.json.error | default('unknown error') }}"
+
+            # ---------- CREATE PUBLICATION ----------
+            - name: Get latest repository version
+              ansible.builtin.uri:
+                url: "{{ _repo_href }}versions/?limit=1&offset=0&ordering=-number"
+                method: GET
+                force_basic_auth: true
+                url_username: "{{ ah_username }}"
+                url_password: "{{ ah_password }}"
+                validate_certs: "{{ validate_certs | bool }}"
+              register: rv_q
+              changed_when: false
+
+            - name: Assert version exists
+              ansible.builtin.assert:
+                that:
+                  - (rv_q.json.count | default(0)) | int > 0
+                fail_msg: "No repository version found for {{ _repo_name }} (did you sync or upload content?)."
+
+            - name: Create publication for latest version
+              ansible.builtin.uri:
+                url: "{{ ah_url }}/pulp/api/v3/publications/ansible/ansible/"
+                method: POST
+                headers: "{{ _headers }}"
+                body_format: json
+                body:
+                  repository_version: "{{ rv_q.json.results[0].pulp_href }}"
+                force_basic_auth: true
+                url_username: "{{ ah_username }}"
+                url_password: "{{ ah_password }}"
+                validate_certs: "{{ validate_certs | bool }}"
+              register: pub_task
+
+            - name: Wait for publication task
+              ansible.builtin.uri:
+                url: "{{ pub_task.json.task }}"
+                method: GET
+                force_basic_auth: true
+                url_username: "{{ ah_username }}"
+                url_password: "{{ ah_password }}"
+                validate_certs: "{{ validate_certs | bool }}"
+              register: pub_status
+              retries: 120
+              delay: 5
+              until: pub_status.json.state in ['completed', 'failed', 'canceled']
+              changed_when: false
+
+            - name: Fail if publication failed
+              when: pub_status.json.state != 'completed'
+              ansible.builtin.fail:
+                msg: "Publication failed for {{ _repo_name }}: {{ pub_status.json.error | default('unknown error') }}"
+
+            - name: Capture publication href
+              ansible.builtin.set_fact:
+                _publication_href: "{{ pub_status.json.created_resources[0] | default('') }}"
+
+            # ---------- (OPTIONAL) SIGNING ----------
+            - name: Refuse to sign unless a vetted signing implementation is wired
+              when: signing_service is mapping and (signing_service.name | default('')) | length > 0
+              ansible.builtin.fail:
+                msg: >-
+                  Signing requested (service='{{ signing_service.name }}') but no approved signing workflow is
+                  implemented here. Provide your PAH signing service details/KMS flow and I will implement it
+                  (with no_log, cert pinning, and task polling).
+
+            # ---------- PROMOTE (DISTRIBUTION UPDATE) ----------
+            - name: Promote by updating distribution (when promote_to provided)
+              when: _promote_to is string
+              block:
+                - name: Lookup distribution by base_path
+                  ansible.builtin.uri:
+                    url: "{{ ah_url }}/pulp/api/v3/distributions/ansible/ansible/?base_path={{ _promote_to | urlencode }}"
+                    method: GET
+                    force_basic_auth: true
+                    url_username: "{{ ah_username }}"
+                    url_password: "{{ ah_password }}"
+                    validate_certs: "{{ validate_certs | bool }}"
+                  register: dist_q
+                  changed_when: false
+
+                - name: Ensure distribution exists (create if missing)
+                  when: (dist_q.json.count | default(0)) | int == 0
+                  ansible.builtin.uri:
+                    url: "{{ ah_url }}/pulp/api/v3/distributions/ansible/ansible/"
+                    method: POST
+                    headers: "{{ _headers }}"
+                    body_format: json
+                    body:
+                      name: "{{ _repo_name }}"
+                      base_path: "{{ _promote_to }}"
+                      publication: "{{ _publication_href }}"
+                    force_basic_auth: true
+                    url_username: "{{ ah_username }}"
+                    url_password: "{{ ah_password }}"
+                    validate_certs: "{{ validate_certs | bool }}"
+                  register: dist_task_create
+
+                - name: Update existing distribution to new publication
+                  when: (dist_q.json.count | default(0)) | int > 0
+                  ansible.builtin.uri:
+                    url: "{{ dist_q.json.results[0].pulp_href }}"
+                    method: PATCH
+                    headers: "{{ _headers }}"
+                    body_format: json
+                    body:
+                      publication: "{{ _publication_href }}"
+                    force_basic_auth: true
+                    url_username: "{{ ah_username }}"
+                    url_password: "{{ ah_password }}"
+                    validate_certs: "{{ validate_certs | bool }}"
+                  register: dist_task_patch
+
+                - name: Wait for distribution task (create/patch)
+                  ansible.builtin.uri:
+                    url: "{{ (dist_task_create.json.task if dist_task_create is defined else dist_task_patch.json.task) }}"
+                    method: GET
+                    force_basic_auth: true
+                    url_username: "{{ ah_username }}"
+                    url_password: "{{ ah_password }}"
+                    validate_certs: "{{ validate_certs | bool }}"
+                  register: dist_status
+                  retries: 120
+                  delay: 5
+                  until: dist_status.json.state in ['completed', 'failed', 'canceled']
+                  changed_when: false
+
+                - name: Fail if distribution operation failed
+                  when: dist_status.json.state != 'completed'
+                  ansible.builtin.fail:
+                    msg: "Distribution update failed for {{ _repo_name }} -> {{ _promote_to }}"
+
+            # ---------- COLLECT RESULT ----------
+            - name: Append result
+              ansible.builtin.set_fact:
+                _results: >-
+                  {{ _results + [ {
+                      'name': _repo_name,
+                      'synced': _do_sync,
+                      'publication': _publication_href,
+                      'promoted_to': (_promote_to | default(None))
+                    } ] }}
+
+          loop: "{{ repos }}"
+          loop_control:
+            label: "{{ item.name }}"
+
+        - name: Write summary (JSON)
+          no_log: false
+          ansible.builtin.copy:
+            dest: "{{ artifacts_dir }}/sync_sign_summary.json"
+            mode: "0640"
+            content: "{{ _results | to_nice_json }}"
+
+        - name: Checksum summary
+          no_log: false
+          ansible.builtin.stat:
+            path: "{{ artifacts_dir }}/sync_sign_summary.json"
+            checksum_algorithm: sha256
+          register: sum
+          changed_when: false
+
+        - name: Write checksum sidecar
+          no_log: false
+          ansible.builtin.copy:
+            dest: "{{ artifacts_dir }}/sync_sign_summary.json.sha256"
+            mode: "0640"
+            content: "{{ sum.stat.checksum }}  sync_sign_summary.json\n"
+
+    - name: Dry-run note
+      when: not apply_changes | bool
+      ansible.builtin.debug:
+        msg: "apply_changes=false → planned only; no sync/publish/promote actions executed."
