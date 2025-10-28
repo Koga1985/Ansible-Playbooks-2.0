@@ -5,40 +5,175 @@
   gather_facts: false
 
   vars:
-    controller_host: "{{ controller_host | default('https://controller.example.mil') }}"
-    controller_oauthtoken: "{{ controller_oauthtoken | default(lookup('env','TOWER_TOKEN')) }}"
-    validate_certs: "{{ validate_certs | default(true) }}"
     artifacts_dir: "{{ artifacts_dir | default('/tmp/ansible-artifacts') }}"
     apply_changes: "{{ apply_changes | default(false) }}"
+    # Expect: repos=[{"path":"/path/to/repo1"}, {"path":"./role_foo"}]
+    repos: "{{ repos | default([]) }}"
+    # If true, fail the play when a scan command returns non-zero (tool error).
+    # (This does NOT fail on found vulns; use a policy step downstream to enforce thresholds.)
+    fail_on_error: "{{ fail_on_error | default(true) }}"
 
   pre_tasks:
-    - name: Ensure artifacts directory
+    - name: Ensure artifacts directory (least privilege)
       ansible.builtin.file:
         path: "{{ artifacts_dir }}"
         state: directory
-        mode: "0755"
+        mode: "0750"
 
-vars:
-  repos: "{{ repos | default([]) }}"
-tasks:
-  - name: Plan SBOM + vuln scan
-    ansible.builtin.copy:
-      dest: "{{ artifacts_dir }}/sbom_scan_plan.json"
-      mode: "0644"
-      content: "{{ repos | to_nice_json }}"
+    - name: Validate repos list
+      ansible.builtin.assert:
+        that:
+          - repos is iterable
+          - repos | length > 0
+          - repos | map(attribute='path') | select('string') | list | length == (repos | length)
+        fail_msg: "Provide repos as a list of dicts with a 'path' string, e.g., repos=[{'path':'/repo1'}]."
 
-  - name: Run syft/grype (if available) to build SBOM and scan
-    when: apply_changes | bool
-    loop: "{{ repos }}"
-    loop_control: { label: "{{ item.path }}" }
-    ansible.builtin.shell: |
-      set -euo pipefail
-      cd "{{ item.path }}"
-      if command -v syft >/dev/null 2>&1; then
-        syft dir:. -o json > "{{ artifacts_dir }}/$(basename {{ item.path }})_sbom.json" || true
-      fi
-      if command -v grype >/dev/null 2>&1; then
-        grype dir:. -o json > "{{ artifacts_dir }}/$(basename {{ item.path }})_vulns.json" || true
-      fi
-    args: { executable: /bin/bash }
-    changed_when: false
+  tasks:
+    - name: Stat each repo (no symlink follow)
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+        follow: false
+      loop: "{{ repos }}"
+      register: repo_stats
+
+    - name: Assert each repo exists, is a directory, and not a symlink
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isdir
+          - not item.stat.islnk
+        fail_msg: "Invalid repo path: {{ item.stat.path }} (must exist, be a directory, and not be a symlink)."
+      loop: "{{ repo_stats.results }}"
+
+    - name: Write scan plan (always)
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/sbom_scan_plan.json"
+        mode: "0640"
+        content: "{{ repos | to_nice_json }}"
+
+    - name: Check syft availability
+      ansible.builtin.command: syft version
+      register: syft_ver
+      changed_when: false
+      failed_when: false
+
+    - name: Check grype availability
+      ansible.builtin.command: grype version
+      register: grype_ver
+      changed_when: false
+      failed_when: false
+
+    - name: Initialize results accumulator
+      ansible.builtin.set_fact:
+        scan_results: []
+
+    - name: SBOM + vuln scan per repo
+      when: apply_changes | bool
+      vars:
+        repo_path: "{{ item.stat.path }}"
+        repo_name: "{{ (item.stat.path | basename) | regex_replace('[^A-Za-z0-9_.-]+','_') }}"
+        sbom_file: "{{ artifacts_dir }}/{{ repo_name }}_sbom.json"
+        vulns_file: "{{ artifacts_dir }}/{{ repo_name }}_vulns.json"
+      block:
+        - name: Run Syft to produce SBOM (if available)
+          when: syft_ver.rc == 0
+          ansible.builtin.command:
+            cmd: syft dir:. -o json
+            chdir: "{{ repo_path }}"
+          register: syft_out
+          changed_when: false
+          failed_when: false
+
+        - name: Write SBOM file
+          when: syft_ver.rc == 0 and (syft_out.rc is defined)
+          ansible.builtin.copy:
+            dest: "{{ sbom_file }}"
+            mode: "0640"
+            content: "{{ syft_out.stdout | default('') }}"
+          register: sbom_write
+          changed_when: false
+
+        - name: Run Grype to scan (if available)
+          when: grype_ver.rc == 0
+          ansible.builtin.command:
+            cmd: grype dir:. -o json
+            chdir: "{{ repo_path }}"
+          register: grype_out
+          changed_when: false
+          failed_when: false
+
+        - name: Write vulnerability report
+          when: grype_ver.rc == 0 and (grype_out.rc is defined)
+          ansible.builtin.copy:
+            dest: "{{ vulns_file }}"
+            mode: "0640"
+            content: "{{ grype_out.stdout | default('') }}"
+          register: vulns_write
+          changed_when: false
+
+        - name: Compute checksums for written files
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            checksum_algorithm: sha256
+          loop: >-
+            {{
+              ([sbom_file] if (sbom_write is defined and sbom_write.dest is defined) else [])
+              + ([vulns_file] if (vulns_write is defined and vulns_write.dest is defined) else [])
+            }}
+          register: hashes
+          changed_when: false
+
+        - name: Write .sha256 sidecars
+          when: hashes.results | length > 0
+          ansible.builtin.copy:
+            dest: "{{ item.stat.path }}.sha256"
+            mode: "0640"
+            content: "{{ item.stat.checksum }}  {{ item.stat.path | basename }}\n"
+          loop: "{{ hashes.results }}"
+          loop_control:
+            label: "{{ item.stat.path | basename }}"
+          changed_when: false
+
+        - name: Append per-repo result
+          ansible.builtin.set_fact:
+            scan_results: >-
+              {{ scan_results + [ {
+                  'repo': repo_path,
+                  'syft_available': (syft_ver.rc == 0),
+                  'grype_available': (grype_ver.rc == 0),
+                  'syft_rc': (syft_out.rc if syft_out is defined else None),
+                  'grype_rc': (grype_out.rc if grype_out is defined else None),
+                  'sbom_file': (sbom_file if (sbom_write is defined and sbom_write.dest is defined) else None),
+                  'vulns_file': (vulns_file if (vulns_write is defined and vulns_write.dest is defined) else None)
+                } ] }}
+      loop: "{{ repo_stats.results }}"
+      loop_control:
+        label: "{{ item.stat.path }}"
+
+    - name: Write summary (JSON)
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/sbom_scan_summary.json"
+        mode: "0640"
+        content: "{{ scan_results | to_nice_json if apply_changes | bool else '[]' }}"
+
+    - name: Compute checksum for summary
+      ansible.builtin.stat:
+        path: "{{ artifacts_dir }}/sbom_scan_summary.json"
+        checksum_algorithm: sha256
+      register: sum_stat
+      changed_when: false
+
+    - name: Write checksum sidecar
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/sbom_scan_summary.json.sha256"
+        mode: "0640"
+        content: "{{ sum_stat.stat.checksum }}  sbom_scan_summary.json\n"
+
+    - name: Optionally fail on tool errors (not on found vulns)
+      when: apply_changes | bool and fail_on_error | bool
+      ansible.builtin.assert:
+        that:
+          - scan_results | length == (repos | length)
+          - (scan_results | selectattr('syft_available','equalto',true) | selectattr('syft_rc','ne',0) | list | length) == 0
+          - (scan_results | selectattr('grype_available','equalto',true) | selectattr('grype_rc','ne',0) | list | length) == 0
+        fail_msg: "Syft/Grype returned non-zero for one or more repos. See sbom_scan_summary.json for details."
