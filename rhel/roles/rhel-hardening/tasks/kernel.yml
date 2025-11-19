@@ -1,0 +1,85 @@
+---
+# tasks/kernel.yml - Kernel Hardening
+# DoD STIG V-204511 through V-204525
+
+- name: Configure kernel security parameters (STIG V-204511 through V-204518)
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+    sysctl_file: /etc/sysctl.d/99-rhel-hardening.conf
+  loop:
+    - { name: 'kernel.randomize_va_space', value: "{{ rhel_kernel_randomize_va_space }}" }
+    - { name: 'kernel.kptr_restrict', value: "{{ rhel_kernel_kptr_restrict }}" }
+    - { name: 'kernel.yama.ptrace_scope', value: "{{ rhel_kernel_yama_ptrace_scope }}" }
+    - { name: 'kernel.dmesg_restrict', value: "{{ rhel_kernel_dmesg_restrict }}" }
+    - { name: 'kernel.kexec_load_disabled', value: "{{ rhel_kernel_kexec_load_disabled }}" }
+    - { name: 'kernel.unprivileged_userns_clone', value: "{{ rhel_kernel_unprivileged_userns_clone }}" }
+    - { name: 'kernel.unprivileged_bpf_disabled', value: "{{ rhel_kernel_unprivileged_bpf_disabled }}" }
+  tags:
+    - sysctl
+    - kernel
+
+- name: Blacklist kernel modules (STIG V-204519)
+  ansible.builtin.lineinfile:
+    path: /etc/modprobe.d/blacklist-{{ item }}.conf
+    line: "install {{ item }} /bin/true"
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ rhel_kernel_modules_blacklist }}"
+  tags:
+    - kernel_modules
+
+- name: Set GRUB configuration permissions (STIG V-204521)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: "{{ rhel_grub_config_permissions }}"
+  loop:
+    - /boot/grub2/grub.cfg
+    - /boot/efi/EFI/redhat/grub.cfg
+  failed_when: false
+  tags:
+    - permissions
+    - grub
+
+- name: Check if UEFI is enabled (STIG V-204523)
+  ansible.builtin.stat:
+    path: /sys/firmware/efi
+  register: uefi_check
+  when: rhel_require_uefi | bool
+  tags:
+    - validation
+
+- name: Verify UEFI mode
+  ansible.builtin.assert:
+    that:
+      - uefi_check.stat.exists
+    fail_msg: "UEFI mode is required but not detected"
+    success_msg: "System is running in UEFI mode"
+  when: rhel_require_uefi | bool
+  tags:
+    - validation
+
+- name: Check Secure Boot status (STIG V-204524)
+  ansible.builtin.command: mokutil --sb-state
+  register: secure_boot_status
+  changed_when: false
+  failed_when: false
+  when: rhel_secure_boot_enabled | bool
+  tags:
+    - validation
+
+- name: Display kernel security status
+  ansible.builtin.debug:
+    msg:
+      - "Kernel security parameters configured"
+      - "ASLR: {{ rhel_kernel_randomize_va_space }}"
+      - "Kernel pointer restriction: {{ rhel_kernel_kptr_restrict }}"
+      - "PTR ACE scope: {{ rhel_kernel_yama_ptrace_scope }}"
+  tags:
+    - validation

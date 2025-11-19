@@ -1,0 +1,50 @@
+---
+# tasks/configure-firewall.yml - Firewall configuration
+# DoD STIG V-204500 through V-204510
+
+- name: Install firewalld
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+  tags:
+    - firewall
+
+- name: Enable and start firewalld
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+  tags:
+    - firewall
+
+- name: Configure default firewall services
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    zone: public
+    permanent: true
+    state: enabled
+  loop:
+    - ssh
+  tags:
+    - firewall
+
+- name: Reload firewalld
+  ansible.builtin.command: firewall-cmd --reload
+  changed_when: true
+  tags:
+    - firewall
+
+- name: Display firewall status
+  ansible.builtin.command: firewall-cmd --list-all
+  register: fw_status
+  changed_when: false
+  tags:
+    - firewall
+    - validation
+
+- name: Show firewall configuration
+  ansible.builtin.debug:
+    msg: "{{ fw_status.stdout_lines }}"
+  tags:
+    - firewall
+    - validation

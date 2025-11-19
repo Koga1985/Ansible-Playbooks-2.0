@@ -1,0 +1,81 @@
+---
+# playbooks/system-hardening.yml - Complete RHEL System Hardening
+# DoD STIG and NIST SP 800-53 Compliant
+
+- name: RHEL System Hardening
+  hosts: rhel_servers
+  become: true
+  gather_facts: true
+
+  vars:
+    # Compliance settings
+    rhel_stig_level: high
+    rhel_apply_nist_controls: true
+    rhel_enable_fips: false
+
+  pre_tasks:
+    - name: Display playbook information
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "RHEL System Hardening Playbook"
+          - "=========================================="
+          - "Target hosts: {{ ansible_play_hosts | length }}"
+          - "STIG Level: {{ rhel_stig_level }}"
+          - "NIST Controls: {{ rhel_apply_nist_controls }}"
+          - "=========================================="
+      tags:
+        - always
+
+  roles:
+    - role: rhel/roles/rhel-hardening
+      tags:
+        - hardening
+        - security
+        - stig
+        - nist
+
+    - role: rhel/roles/rhel-firewall-selinux
+      tags:
+        - firewall
+        - selinux
+        - security
+
+    - role: rhel/roles/rhel-audit-logging
+      tags:
+        - audit
+        - logging
+        - security
+
+  post_tasks:
+    - name: Display hardening completion message
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "System Hardening Completed"
+          - "=========================================="
+          - "Host: {{ ansible_hostname }}"
+          - "Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel: {{ ansible_kernel }}"
+          - ""
+          - "IMPORTANT: Review changes before rebooting"
+          - "Run compliance validation: ansible-playbook compliance-check.yml"
+          - "=========================================="
+      tags:
+        - always
+
+    - name: Check if reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_check
+      tags:
+        - always
+
+    - name: Display reboot notice
+      ansible.builtin.debug:
+        msg:
+          - "WARNING: System reboot may be required"
+          - "Check /var/run/reboot-required and kernel version"
+      when: reboot_check.stat.exists | default(false)
+      tags:
+        - always

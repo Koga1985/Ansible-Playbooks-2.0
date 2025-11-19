@@ -1,0 +1,80 @@
+---
+# tasks/preflight.yml - Pre-flight validation checks
+
+- name: Gather distribution facts
+  ansible.builtin.setup:
+    gather_subset:
+      - distribution
+  tags:
+    - always
+
+- name: Validate RHEL distribution
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "RedHat"
+      - ansible_distribution_major_version in ["8", "9"]
+    fail_msg: "This role only supports RHEL 8 and RHEL 9"
+    success_msg: "Running on {{ ansible_distribution }} {{ ansible_distribution_version }}"
+  tags:
+    - always
+
+- name: Check if system is registered with Red Hat
+  ansible.builtin.command: subscription-manager status
+  register: rhel_subscription_status
+  changed_when: false
+  failed_when: false
+  when: rhel_check_subscription | bool
+  tags:
+    - always
+
+- name: Display subscription status
+  ansible.builtin.debug:
+    msg: "System subscription status: {{ rhel_subscription_status.stdout_lines | default(['Not checked']) }}"
+  when: rhel_check_subscription | bool
+  tags:
+    - always
+
+- name: Validate required packages are available
+  ansible.builtin.package_facts:
+    manager: auto
+  tags:
+    - always
+
+- name: Check available disk space
+  ansible.builtin.shell: df -h / | tail -1 | awk '{print $5}' | sed 's/%//'
+  register: disk_usage
+  changed_when: false
+  tags:
+    - always
+
+- name: Validate sufficient disk space
+  ansible.builtin.assert:
+    that:
+      - disk_usage.stdout | int < 90
+    fail_msg: "Insufficient disk space ({{ disk_usage.stdout }}% used). Please ensure at least 10% free space."
+    success_msg: "Sufficient disk space available ({{ disk_usage.stdout }}% used)"
+  tags:
+    - always
+
+- name: Check if system requires reboot
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: reboot_required
+  tags:
+    - always
+
+- name: Display reboot status
+  ansible.builtin.debug:
+    msg: "System reboot required: {{ reboot_required.stat.exists }}"
+  tags:
+    - always
+
+- name: Pre-flight checks completed
+  ansible.builtin.debug:
+    msg:
+      - "Pre-flight checks completed successfully"
+      - "Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+      - "Architecture: {{ ansible_architecture }}"
+      - "Kernel: {{ ansible_kernel }}"
+  tags:
+    - always

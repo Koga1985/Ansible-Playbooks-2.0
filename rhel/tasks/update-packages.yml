@@ -1,0 +1,45 @@
+---
+# tasks/update-packages.yml - Update system packages
+# DoD STIG V-204393
+
+- name: Update package cache
+  ansible.builtin.dnf:
+    update_cache: true
+  tags:
+    - updates
+
+- name: Check for available updates
+  ansible.builtin.dnf:
+    list: updates
+  register: updates_available
+  tags:
+    - updates
+
+- name: Display available updates count
+  ansible.builtin.debug:
+    msg: "Available updates: {{ updates_available.results | length }}"
+  tags:
+    - updates
+
+- name: Install all updates
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+  tags:
+    - updates
+
+- name: Check if reboot required
+  ansible.builtin.shell: |
+    LAST_KERNEL=$(rpm -q --last kernel | head -1 | awk '{print $1}' | sed 's/kernel-//')
+    CURRENT_KERNEL=$(uname -r)
+    if [ "$LAST_KERNEL" != "$CURRENT_KERNEL" ]; then echo "reboot_required"; fi
+  register: reboot_check
+  changed_when: false
+  tags:
+    - updates
+
+- name: Display reboot status
+  ansible.builtin.debug:
+    msg: "Reboot required: {{ 'yes' if 'reboot_required' in reboot_check.stdout else 'no' }}"
+  tags:
+    - updates

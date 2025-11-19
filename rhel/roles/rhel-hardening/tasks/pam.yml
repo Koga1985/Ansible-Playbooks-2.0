@@ -1,0 +1,79 @@
+---
+# tasks/pam.yml - PAM Configuration
+# DoD STIG V-204431 through V-204445
+
+- name: Set PAM configuration files ownership (STIG V-204431)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ rhel_pam_files_owner }}"
+    group: "{{ rhel_pam_files_group }}"
+    mode: "{{ rhel_pam_files_permissions }}"
+  loop:
+    - /etc/pam.d/system-auth
+    - /etc/pam.d/password-auth
+    - /etc/pam.d/login
+    - /etc/pam.d/sshd
+    - /etc/pam.d/su
+    - /etc/pam.d/sudo
+  tags:
+    - permissions
+
+- name: Configure session timeout (STIG V-204436, V-204437)
+  ansible.builtin.blockinfile:
+    path: /etc/profile.d/tmout.sh
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+    block: |
+      # Session timeout configuration - STIG V-204437
+      TMOUT={{ rhel_tmout }}
+      {% if rhel_tmout_readonly %}
+      readonly TMOUT
+      {% endif %}
+      export TMOUT
+  when: rhel_configure_tmout_profile | bool
+  tags:
+    - session
+
+- name: Disable Ctrl-Alt-Del (STIG V-204440)
+  ansible.builtin.systemd:
+    name: ctrl-alt-del.target
+    masked: true
+  when: rhel_disable_ctrl_alt_del | bool
+  tags:
+    - systemd
+
+- name: Disable USB storage (STIG V-204443)
+  ansible.builtin.lineinfile:
+    path: /etc/modprobe.d/usb-storage.conf
+    line: 'install usb-storage /bin/true'
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+  when: rhel_disable_usb_storage | bool
+  tags:
+    - kernel_modules
+
+- name: Disable automounting (STIG V-204444)
+  ansible.builtin.systemd:
+    name: autofs
+    enabled: false
+    state: stopped
+  when: rhel_disable_automount | bool
+  failed_when: false
+  tags:
+    - services
+
+- name: Disable Bluetooth (STIG V-204445)
+  ansible.builtin.lineinfile:
+    path: /etc/modprobe.d/bluetooth.conf
+    line: 'install bluetooth /bin/true'
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+  when: rhel_disable_bluetooth | bool
+  tags:
+    - kernel_modules

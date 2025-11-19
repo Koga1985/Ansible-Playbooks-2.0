@@ -1,0 +1,19 @@
+---
+# Ansible Collections Requirements for RHEL Automation
+#
+# Install with:
+#   ansible-galaxy collection install -r requirements.yml
+#
+
+collections:
+  # Core POSIX/Linux modules (user, group, mount, firewalld, selinux, etc.)
+  - name: ansible.posix
+    version: ">=1.5.0"
+
+  # Community general modules (rpm_key, redhat_subscription, etc.)
+  - name: community.general
+    version: ">=7.0.0"
+
+  # Crypto modules for certificate and key management
+  - name: community.crypto
+    version: ">=2.0.0"

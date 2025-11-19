@@ -1,0 +1,31 @@
+---
+# tasks/crypto-policy.yml - Crypto Policy Configuration
+
+- name: Get current crypto policy
+  ansible.builtin.command: update-crypto-policies --show
+  register: current_crypto_policy
+  changed_when: false
+  tags:
+    - validation
+
+- name: Set system crypto policy
+  ansible.builtin.command: update-crypto-policies --set {{ rhel_crypto_policy }}
+  when: current_crypto_policy.stdout != rhel_crypto_policy
+  notify: reboot system
+  tags:
+    - crypto
+
+- name: Verify crypto policy configuration
+  ansible.builtin.command: update-crypto-policies --show
+  register: new_crypto_policy
+  changed_when: false
+  tags:
+    - validation
+
+- name: Display crypto policy status
+  ansible.builtin.debug:
+    msg:
+      - "System crypto policy: {{ new_crypto_policy.stdout }}"
+      - "Target policy: {{ rhel_crypto_policy }}"
+  tags:
+    - validation

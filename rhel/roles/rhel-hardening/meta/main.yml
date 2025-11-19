@@ -1,0 +1,32 @@
+---
+galaxy_info:
+  role_name: rhel-hardening
+  author: Ansible Automation
+  description: Production-ready RHEL system hardening with DoD STIG and NIST SP 800-53 compliance
+  company: Enterprise IT
+  license: MIT
+
+  min_ansible_version: "2.12"
+
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+
+  galaxy_tags:
+    - rhel
+    - security
+    - hardening
+    - compliance
+    - stig
+    - nist
+    - cis
+    - redhat
+    - linux
+    - dod
+    - enterprise
+
+dependencies: []
+
+allow_duplicates: false

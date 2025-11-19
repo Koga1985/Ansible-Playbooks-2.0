@@ -1,0 +1,129 @@
+---
+# tasks/ssh.yml - SSH Hardening Configuration
+# DoD STIG V-204596 through V-204612
+
+- name: Ensure OpenSSH server is installed
+  ansible.builtin.package:
+    name: openssh-server
+    state: present
+  tags:
+    - packages
+
+- name: Backup current SSH configuration
+  ansible.builtin.copy:
+    src: /etc/ssh/sshd_config
+    dest: /etc/ssh/sshd_config.backup-{{ ansible_date_time.epoch }}
+    remote_src: true
+    mode: '0600'
+    owner: root
+    group: root
+  tags:
+    - backup
+
+- name: Configure SSH daemon settings
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?{{ item.key }}"
+    line: "{{ item.key }} {{ item.value }}"
+    state: present
+    validate: '/usr/sbin/sshd -t -f %s'
+  loop:
+    - { key: 'Protocol', value: '2' }
+    - { key: 'Port', value: "{{ rhel_ssh_port }}" }
+    - { key: 'PermitRootLogin', value: "{{ 'yes' if rhel_ssh_permit_root_login else 'no' }}" }
+    - { key: 'PasswordAuthentication', value: "{{ 'yes' if rhel_ssh_password_authentication else 'no' }}" }
+    - { key: 'PubkeyAuthentication', value: "{{ 'yes' if rhel_ssh_pubkey_authentication else 'no' }}" }
+    - { key: 'X11Forwarding', value: "{{ 'yes' if rhel_ssh_x11_forwarding else 'no' }}" }
+    - { key: 'MaxAuthTries', value: "{{ rhel_ssh_max_auth_tries }}" }
+    - { key: 'MaxSessions', value: "{{ rhel_ssh_max_sessions }}" }
+    - { key: 'ClientAliveInterval', value: "{{ rhel_ssh_client_alive_interval }}" }
+    - { key: 'ClientAliveCountMax', value: "{{ rhel_ssh_client_alive_count_max }}" }
+    - { key: 'PermitUserEnvironment', value: "{{ 'yes' if rhel_ssh_permit_user_environment else 'no' }}" }
+    - { key: 'PermitEmptyPasswords', value: "{{ 'yes' if rhel_ssh_permit_empty_passwords else 'no' }}" }
+    - { key: 'HostbasedAuthentication', value: "{{ 'yes' if rhel_ssh_hostbased_authentication else 'no' }}" }
+    - { key: 'GSSAPIAuthentication', value: "{{ 'yes' if rhel_ssh_gssapi_authentication else 'no' }}" }
+    - { key: 'KerberosAuthentication', value: "{{ 'yes' if rhel_ssh_kerberos_authentication else 'no' }}" }
+    - { key: 'Banner', value: "{{ rhel_ssh_banner }}" }
+  notify: restart sshd
+  tags:
+    - sshd_config
+
+- name: Configure SSH ciphers (STIG V-204597)
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?Ciphers'
+    line: "Ciphers {{ rhel_ssh_ciphers | join(',') }}"
+    state: present
+    validate: '/usr/sbin/sshd -t -f %s'
+  notify: restart sshd
+  tags:
+    - sshd_config
+
+- name: Configure SSH MACs (STIG V-204598)
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?MACs'
+    line: "MACs {{ rhel_ssh_macs | join(',') }}"
+    state: present
+    validate: '/usr/sbin/sshd -t -f %s'
+  notify: restart sshd
+  tags:
+    - sshd_config
+
+- name: Configure SSH key exchange algorithms (STIG V-204599)
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?KexAlgorithms'
+    line: "KexAlgorithms {{ rhel_ssh_kex_algorithms | join(',') }}"
+    state: present
+    validate: '/usr/sbin/sshd -t -f %s'
+  notify: restart sshd
+  tags:
+    - sshd_config
+
+- name: Configure SSH allowed users
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?AllowUsers'
+    line: "AllowUsers {{ rhel_ssh_allowed_users | join(' ') }}"
+    state: present
+    validate: '/usr/sbin/sshd -t -f %s'
+  when: rhel_ssh_allowed_users | length > 0
+  notify: restart sshd
+  tags:
+    - sshd_config
+
+- name: Configure SSH allowed groups
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?AllowGroups'
+    line: "AllowGroups {{ rhel_ssh_allowed_groups | join(' ') }}"
+    state: present
+    validate: '/usr/sbin/sshd -t -f %s'
+  when: rhel_ssh_allowed_groups | length > 0
+  notify: restart sshd
+  tags:
+    - sshd_config
+
+- name: Set SSH configuration file permissions
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: '0600'
+  tags:
+    - permissions
+
+- name: Ensure SSH service is enabled and started
+  ansible.builtin.systemd:
+    name: sshd
+    enabled: true
+    state: started
+  tags:
+    - services
+
+- name: Validate SSH configuration
+  ansible.builtin.command: /usr/sbin/sshd -t
+  changed_when: false
+  tags:
+    - validation

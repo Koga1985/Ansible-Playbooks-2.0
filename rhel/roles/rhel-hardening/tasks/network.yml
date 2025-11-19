@@ -1,0 +1,59 @@
+---
+# tasks/network.yml - Network Stack Hardening
+# DoD STIG V-204480 through V-204493
+
+- name: Configure kernel network parameters (STIG V-204480 through V-204493)
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+    sysctl_file: /etc/sysctl.d/99-rhel-hardening.conf
+  loop:
+    - { name: 'net.ipv4.ip_forward', value: "{{ rhel_network_ip_forward }}" }
+    - { name: 'net.ipv4.conf.all.send_redirects', value: "{{ rhel_network_send_redirects }}" }
+    - { name: 'net.ipv4.conf.default.send_redirects', value: "{{ rhel_network_send_redirects }}" }
+    - { name: 'net.ipv4.conf.all.accept_source_route', value: "{{ rhel_network_accept_source_route }}" }
+    - { name: 'net.ipv4.conf.default.accept_source_route', value: "{{ rhel_network_accept_source_route }}" }
+    - { name: 'net.ipv4.conf.all.accept_redirects', value: "{{ rhel_network_accept_redirects }}" }
+    - { name: 'net.ipv4.conf.default.accept_redirects', value: "{{ rhel_network_accept_redirects }}" }
+    - { name: 'net.ipv4.conf.all.secure_redirects', value: "{{ rhel_network_secure_redirects }}" }
+    - { name: 'net.ipv4.conf.default.secure_redirects', value: "{{ rhel_network_secure_redirects }}" }
+    - { name: 'net.ipv4.conf.all.log_martians', value: "{{ rhel_network_log_martians }}" }
+    - { name: 'net.ipv4.conf.default.log_martians', value: "{{ rhel_network_log_martians }}" }
+    - { name: 'net.ipv4.icmp_echo_ignore_broadcasts', value: "{{ rhel_network_ignore_icmp_broadcast }}" }
+    - { name: 'net.ipv4.icmp_ignore_bogus_error_responses', value: "{{ rhel_network_ignore_bogus_icmp }}" }
+    - { name: 'net.ipv4.conf.all.rp_filter', value: "{{ rhel_network_rp_filter }}" }
+    - { name: 'net.ipv4.conf.default.rp_filter', value: "{{ rhel_network_rp_filter }}" }
+    - { name: 'net.ipv4.tcp_syncookies', value: "{{ rhel_network_tcp_syncookies }}" }
+    - { name: 'net.ipv6.conf.all.accept_ra', value: "{{ rhel_network_ipv6_accept_ra }}" }
+    - { name: 'net.ipv6.conf.default.accept_ra', value: "{{ rhel_network_ipv6_accept_ra }}" }
+    - { name: 'net.ipv6.conf.all.accept_redirects', value: "{{ rhel_network_ipv6_accept_redirects }}" }
+    - { name: 'net.ipv6.conf.default.accept_redirects', value: "{{ rhel_network_ipv6_accept_redirects }}" }
+  tags:
+    - sysctl
+    - network
+
+- name: Disable IPv6 if not used (STIG V-204492)
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: '1'
+    state: present
+    reload: true
+    sysctl_file: /etc/sysctl.d/99-rhel-hardening.conf
+  loop:
+    - net.ipv6.conf.all.disable_ipv6
+    - net.ipv6.conf.default.disable_ipv6
+  when: rhel_disable_ipv6 | bool
+  tags:
+    - sysctl
+    - network
+
+- name: Verify network settings
+  ansible.builtin.command: sysctl -a
+  register: sysctl_output
+  changed_when: false
+  failed_when: false
+  tags:
+    - validation
+    - never

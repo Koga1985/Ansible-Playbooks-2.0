@@ -1,0 +1,6 @@
+# /etc/securetty - terminals on which root can login
+# DoD STIG V-204423, V-204424
+
+{% for console in rhel_root_allowed_consoles %}
+{{ console }}
+{% endfor %}

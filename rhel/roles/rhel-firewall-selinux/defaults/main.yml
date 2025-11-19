@@ -1,0 +1,78 @@
+---
+# defaults/main.yml - RHEL Firewall and SELinux Role
+# DoD STIG V-204401, V-204500 through V-204510
+
+# =============================================================================
+# SELinux Configuration
+# =============================================================================
+
+# SELinux state: enforcing, permissive, disabled
+# STIG V-204401
+rhel_selinux_state: enforcing
+
+# SELinux policy type: targeted, mls
+rhel_selinux_policy: targeted
+
+# SELinux booleans to configure
+rhel_selinux_booleans: {}
+#  httpd_can_network_connect: 'on'
+#  httpd_can_network_connect_db: 'on'
+
+# Install SELinux troubleshooting tools
+rhel_install_selinux_tools: true
+
+# =============================================================================
+# Firewall Configuration
+# =============================================================================
+
+# Enable firewalld
+# STIG V-204500
+rhel_firewall_enabled: true
+
+# Default firewall zone
+rhel_firewall_default_zone: public
+
+# Firewall services to allow
+rhel_firewall_services:
+  - ssh
+
+# Firewall ports to open
+rhel_firewall_ports: []
+#  - 8080/tcp
+#  - 8443/tcp
+
+# Firewall rich rules
+rhel_firewall_rich_rules: []
+#  - rule family="ipv4" source address="192.168.1.0/24" accept
+
+# Firewall zones configuration
+rhel_firewall_zones: []
+#  - zone: public
+#    services:
+#      - ssh
+#      - http
+#    ports:
+#      - 8080/tcp
+
+# Remove services from firewall
+rhel_firewall_remove_services: []
+
+# Panic mode (block all traffic)
+rhel_firewall_panic: false
+
+# Direct rules (iptables)
+rhel_firewall_direct_rules: []
+
+# ICMP block
+rhel_firewall_block_icmp: []
+#  - echo-request
+#  - echo-reply
+
+# Masquerading
+rhel_firewall_masquerade: false
+
+# Port forwarding
+rhel_firewall_port_forward: []
+#  - port: 80
+#    proto: tcp
+#    toport: 8080

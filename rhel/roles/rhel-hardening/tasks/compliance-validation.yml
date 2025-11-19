@@ -1,0 +1,93 @@
+---
+# tasks/compliance-validation.yml - Compliance Validation
+
+- name: Check if OpenSCAP is installed
+  ansible.builtin.package_facts:
+    manager: auto
+  tags:
+    - validation
+
+- name: Validation prerequisites check
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "Compliance Validation"
+      - "========================================="
+      - "STIG Level: {{ rhel_stig_level }}"
+      - "NIST Controls: {{ rhel_apply_nist_controls }}"
+      - "CIS Benchmark: {{ rhel_apply_cis_benchmark }}"
+      - "========================================="
+  tags:
+    - validation
+
+- name: Check SSH configuration compliance
+  ansible.builtin.command: sshd -t
+  register: ssh_compliance
+  changed_when: false
+  failed_when: false
+  tags:
+    - validation
+
+- name: Check password policy compliance
+  ansible.builtin.command: pwscore
+  register: password_compliance
+  changed_when: false
+  failed_when: false
+  tags:
+    - validation
+
+- name: Check firewall status
+  ansible.builtin.command: firewall-cmd --state
+  register: firewall_status
+  changed_when: false
+  failed_when: false
+  tags:
+    - validation
+
+- name: Check SELinux status
+  ansible.builtin.command: getenforce
+  register: selinux_status
+  changed_when: false
+  failed_when: false
+  tags:
+    - validation
+
+- name: Check audit service status
+  ansible.builtin.systemd:
+    name: auditd
+  register: audit_status
+  tags:
+    - validation
+
+- name: Generate compliance summary
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "Compliance Validation Summary"
+      - "========================================="
+      - "SSH Configuration: {{ 'PASS' if ssh_compliance.rc == 0 else 'FAIL' }}"
+      - "Firewall Status: {{ firewall_status.stdout if firewall_status.rc == 0 else 'Not running' }}"
+      - "SELinux Status: {{ selinux_status.stdout }}"
+      - "Audit Service: {{ 'Running' if audit_status.status.ActiveState == 'active' else 'Not running' }}"
+      - "========================================="
+      - "Review the output above for compliance status"
+      - "For detailed SCAP assessment, run:"
+      - "  oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_stig \\"
+      - "    /usr/share/xml/scap/ssg/content/ssg-rhel{{ ansible_distribution_major_version }}-ds.xml"
+      - "========================================="
+  tags:
+    - validation
+    - report
+
+- name: Check for compliance violations
+  ansible.builtin.assert:
+    that:
+      - ssh_compliance.rc == 0
+      - firewall_status.rc == 0
+      - selinux_status.stdout in ['Enforcing', 'Permissive']
+      - audit_status.status.ActiveState == 'active'
+    fail_msg: "Compliance violations detected. Review the validation summary above."
+    success_msg: "Basic compliance checks passed."
+  when: rhel_fail_on_compliance_violations | bool
+  tags:
+    - validation

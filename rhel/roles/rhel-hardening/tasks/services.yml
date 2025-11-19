@@ -1,0 +1,71 @@
+---
+# tasks/services.yml - Service Hardening
+# DoD STIG V-204494 through V-204510
+
+- name: Disable unnecessary services (STIG V-204494)
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop: "{{ rhel_services_to_disable }}"
+  when: rhel_disable_unnecessary_services | bool
+  failed_when: false
+  tags:
+    - services
+
+- name: Enable required services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop: "{{ rhel_services_to_enable }}"
+  tags:
+    - services
+
+- name: Remove telnet client (STIG V-204497)
+  ansible.builtin.package:
+    name: telnet
+    state: absent
+  when: rhel_remove_telnet_client | bool
+  tags:
+    - packages
+
+- name: Remove rsh-client (STIG V-204498)
+  ansible.builtin.package:
+    name: rsh
+    state: absent
+  when: rhel_remove_rsh_client | bool
+  tags:
+    - packages
+
+- name: Remove ypbind (STIG V-204499)
+  ansible.builtin.package:
+    name: ypbind
+    state: absent
+  when: rhel_remove_ypbind | bool
+  tags:
+    - packages
+
+- name: Remove X11 packages (STIG V-204495)
+  ansible.builtin.package:
+    name: "{{ rhel_x11_packages }}"
+    state: absent
+  when: rhel_remove_x11_packages | bool
+  tags:
+    - packages
+
+- name: Remove additional packages
+  ansible.builtin.package:
+    name: "{{ rhel_packages_to_remove }}"
+    state: absent
+  when: rhel_packages_to_remove | length > 0
+  tags:
+    - packages
+
+- name: List all running services
+  ansible.builtin.command: systemctl list-units --type=service --state=running
+  register: running_services
+  changed_when: false
+  tags:
+    - validation
+    - never

@@ -1,0 +1,30 @@
+---
+galaxy_info:
+  role_name: rhel-audit-logging
+  author: Ansible Automation
+  description: Production-ready RHEL audit and logging configuration with STIG compliance
+  company: Enterprise IT
+  license: MIT
+
+  min_ansible_version: "2.12"
+
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+
+  galaxy_tags:
+    - rhel
+    - audit
+    - logging
+    - security
+    - compliance
+    - stig
+    - aide
+    - redhat
+    - linux
+
+dependencies: []
+
+allow_duplicates: false

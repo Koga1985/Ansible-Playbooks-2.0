@@ -1,0 +1,45 @@
+---
+# tasks/register-system.yml - Register system with Red Hat Subscription Manager
+# DoD STIG V-204392
+
+- name: Check current subscription status
+  ansible.builtin.command: subscription-manager status
+  register: sub_status
+  changed_when: false
+  failed_when: false
+  tags:
+    - subscription
+
+- name: Display current subscription status
+  ansible.builtin.debug:
+    msg: "{{ sub_status.stdout_lines }}"
+  tags:
+    - subscription
+
+- name: Register system with Red Hat
+  community.general.redhat_subscription:
+    state: present
+    username: "{{ rhsm_username }}"
+    password: "{{ rhsm_password }}"
+    auto_attach: true
+  when:
+    - rhsm_username is defined
+    - rhsm_password is defined
+    - "'Overall Status: Unknown' in sub_status.stdout or 'Overall Status: Invalid' in sub_status.stdout"
+  tags:
+    - subscription
+
+- name: Verify subscription
+  ansible.builtin.command: subscription-manager status
+  register: final_sub_status
+  changed_when: false
+  tags:
+    - subscription
+    - validation
+
+- name: Display final subscription status
+  ansible.builtin.debug:
+    msg: "{{ final_sub_status.stdout_lines }}"
+  tags:
+    - subscription
+    - validation

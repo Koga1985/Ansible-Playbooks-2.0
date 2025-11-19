@@ -1,0 +1,82 @@
+---
+# defaults/main.yml - RHEL Audit and Logging Role
+# DoD STIG V-204494 through V-204644
+
+# =============================================================================
+# Auditd Configuration
+# =============================================================================
+
+# Enable auditd service
+rhel_audit_enabled: true
+
+# Audit log retention days
+rhel_audit_log_retention_days: 90
+
+# Audit log file size (MB)
+rhel_audit_max_log_file: 8
+
+# Number of log files to keep
+rhel_audit_num_logs: 5
+
+# Action when audit log is full: ignore, syslog, suspend, single, halt
+rhel_audit_max_log_file_action: rotate
+
+# Space left on disk (MB)
+rhel_audit_space_left: 75
+
+# Action when space is low: ignore, syslog, email, suspend, single, halt
+rhel_audit_space_left_action: email
+
+# Admin to email when space is low
+rhel_audit_action_mail_acct: root
+
+# Disk full action
+rhel_audit_disk_full_action: suspend
+
+# Disk error action
+rhel_audit_disk_error_action: suspend
+
+# Flush audit logs to disk: none, incremental, incremental_async, data, sync
+rhel_audit_flush: incremental_async
+
+# =============================================================================
+# Audit Rules Configuration
+# =============================================================================
+
+# Configure STIG-compliant audit rules
+rhel_configure_audit_rules: true
+
+# Custom audit rules
+rhel_custom_audit_rules: []
+
+# =============================================================================
+# Rsyslog Configuration
+# =============================================================================
+
+# Enable rsyslog
+rhel_rsyslog_enabled: true
+
+# Remote logging configuration
+rhel_remote_logging_enabled: false
+rhel_remote_log_server: ""
+rhel_remote_log_port: 514
+rhel_remote_log_protocol: tcp
+
+# Log file permissions
+rhel_log_file_permissions: "0640"
+
+# Log rotation days
+rhel_log_rotation_days: 7
+
+# =============================================================================
+# AIDE Configuration
+# =============================================================================
+
+# Configure AIDE for file integrity monitoring
+rhel_configure_aide: true
+
+# AIDE database path
+rhel_aide_db_path: /var/lib/aide/aide.db.gz
+
+# AIDE check schedule (cron)
+rhel_aide_check_schedule: daily

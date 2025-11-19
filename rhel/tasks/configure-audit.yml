@@ -1,0 +1,35 @@
+---
+# tasks/configure-audit.yml - Auditd configuration
+# DoD STIG V-204494 through V-204644
+
+- name: Install audit packages
+  ansible.builtin.package:
+    name:
+      - audit
+      - audispd-plugins
+    state: present
+  tags:
+    - audit
+
+- name: Enable and start auditd
+  ansible.builtin.systemd:
+    name: auditd
+    enabled: true
+    state: started
+  tags:
+    - audit
+
+- name: Check audit status
+  ansible.builtin.command: auditctl -s
+  register: audit_status
+  changed_when: false
+  tags:
+    - audit
+    - validation
+
+- name: Display audit status
+  ansible.builtin.debug:
+    msg: "{{ audit_status.stdout_lines }}"
+  tags:
+    - audit
+    - validation

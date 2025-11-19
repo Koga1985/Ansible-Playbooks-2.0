@@ -1,0 +1,185 @@
+---
+# tasks/main.yml - RHEL Audit and Logging Configuration
+# DoD STIG V-204494 through V-204644
+
+- name: Display audit and logging information
+  ansible.builtin.debug:
+    msg:
+      - "=================================="
+      - "RHEL Audit and Logging Config"
+      - "=================================="
+      - "Audit enabled: {{ rhel_audit_enabled }}"
+      - "Log retention: {{ rhel_audit_log_retention_days }} days"
+      - "Remote logging: {{ rhel_remote_logging_enabled }}"
+      - "=================================="
+  tags:
+    - always
+
+# Auditd Configuration
+- name: Install audit packages
+  ansible.builtin.package:
+    name:
+      - audit
+      - audispd-plugins
+    state: present
+  tags:
+    - packages
+
+- name: Configure auditd
+  ansible.builtin.lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: "^{{ item.key }}"
+    line: "{{ item.key }} = {{ item.value }}"
+    state: present
+  loop:
+    - { key: 'max_log_file', value: "{{ rhel_audit_max_log_file }}" }
+    - { key: 'num_logs', value: "{{ rhel_audit_num_logs }}" }
+    - { key: 'max_log_file_action', value: "{{ rhel_audit_max_log_file_action }}" }
+    - { key: 'space_left', value: "{{ rhel_audit_space_left }}" }
+    - { key: 'space_left_action', value: "{{ rhel_audit_space_left_action }}" }
+    - { key: 'action_mail_acct', value: "{{ rhel_audit_action_mail_acct }}" }
+    - { key: 'disk_full_action', value: "{{ rhel_audit_disk_full_action }}" }
+    - { key: 'disk_error_action', value: "{{ rhel_audit_disk_error_action }}" }
+    - { key: 'flush', value: "{{ rhel_audit_flush }}" }
+  notify: restart auditd
+  tags:
+    - auditd
+
+- name: Configure STIG-compliant audit rules
+  ansible.builtin.template:
+    src: audit-rules.j2
+    dest: /etc/audit/rules.d/stig.rules
+    owner: root
+    group: root
+    mode: '0640'
+  when: rhel_configure_audit_rules | bool
+  notify: restart auditd
+  tags:
+    - auditd
+
+- name: Add custom audit rules
+  ansible.builtin.lineinfile:
+    path: /etc/audit/rules.d/custom.rules
+    line: "{{ item }}"
+    create: true
+    owner: root
+    group: root
+    mode: '0640'
+  loop: "{{ rhel_custom_audit_rules }}"
+  when: rhel_custom_audit_rules | length > 0
+  notify: restart auditd
+  tags:
+    - auditd
+
+- name: Enable and start auditd
+  ansible.builtin.systemd:
+    name: auditd
+    enabled: true
+    state: started
+  when: rhel_audit_enabled | bool
+  tags:
+    - services
+
+# Rsyslog Configuration
+- name: Install rsyslog
+  ansible.builtin.package:
+    name: rsyslog
+    state: present
+  tags:
+    - packages
+
+- name: Configure rsyslog
+  ansible.builtin.template:
+    src: rsyslog.conf.j2
+    dest: /etc/rsyslog.d/99-rhel-hardening.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart rsyslog
+  tags:
+    - rsyslog
+
+- name: Configure remote logging
+  ansible.builtin.lineinfile:
+    path: /etc/rsyslog.d/remote.conf
+    line: "*.* @@{{ rhel_remote_log_server }}:{{ rhel_remote_log_port }}"
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+  when: rhel_remote_logging_enabled | bool
+  notify: restart rsyslog
+  tags:
+    - rsyslog
+
+- name: Enable and start rsyslog
+  ansible.builtin.systemd:
+    name: rsyslog
+    enabled: true
+    state: started
+  when: rhel_rsyslog_enabled | bool
+  tags:
+    - services
+
+- name: Set log file permissions
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "{{ rhel_log_file_permissions }}"
+    owner: root
+    group: root
+  loop:
+    - /var/log/messages
+    - /var/log/secure
+    - /var/log/maillog
+    - /var/log/cron
+  failed_when: false
+  tags:
+    - permissions
+
+# AIDE Configuration
+- name: Install AIDE
+  ansible.builtin.package:
+    name: aide
+    state: present
+  when: rhel_configure_aide | bool
+  tags:
+    - packages
+
+- name: Check if AIDE database exists
+  ansible.builtin.stat:
+    path: "{{ rhel_aide_db_path }}"
+  register: aide_db
+  when: rhel_configure_aide | bool
+  tags:
+    - aide
+
+- name: Configure AIDE check schedule
+  ansible.builtin.cron:
+    name: "AIDE integrity check"
+    job: "/usr/sbin/aide --check | /usr/bin/mail -s 'AIDE Integrity Check' root"
+    special_time: "{{ rhel_aide_check_schedule }}"
+    user: root
+    state: present
+  when: rhel_configure_aide | bool
+  tags:
+    - aide
+
+- name: Display audit status
+  ansible.builtin.command: auditctl -s
+  register: audit_status
+  changed_when: false
+  tags:
+    - validation
+
+- name: Display logging completion
+  ansible.builtin.debug:
+    msg:
+      - "=================================="
+      - "Audit and Logging Configured"
+      - "=================================="
+      - "Auditd status: {{ 'Active' if rhel_audit_enabled else 'Disabled' }}"
+      - "Remote logging: {{ 'Enabled' if rhel_remote_logging_enabled else 'Disabled' }}"
+      - "AIDE configured: {{ 'Yes' if rhel_configure_aide else 'No' }}"
+      - "=================================="
+  tags:
+    - always

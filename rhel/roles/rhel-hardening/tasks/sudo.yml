@@ -1,0 +1,78 @@
+---
+# tasks/sudo.yml - Sudo Configuration
+# DoD STIG V-204526 through V-204535
+
+- name: Ensure sudo is installed
+  ansible.builtin.package:
+    name: sudo
+    state: present
+  tags:
+    - packages
+
+- name: Set sudoers file permissions (STIG V-204526)
+  ansible.builtin.file:
+    path: /etc/sudoers
+    owner: root
+    group: root
+    mode: "{{ rhel_sudoers_file_permissions }}"
+  tags:
+    - permissions
+
+- name: Backup sudoers file
+  ansible.builtin.copy:
+    src: /etc/sudoers
+    dest: /etc/sudoers.backup-{{ ansible_date_time.epoch }}
+    remote_src: true
+    mode: '0440'
+    owner: root
+    group: root
+  tags:
+    - backup
+
+- name: Configure sudo defaults
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers
+    regexp: "^Defaults\\s+{{ item.key }}"
+    line: "Defaults {{ item.key }}{{ '=' if item.value else '' }}{{ item.value }}"
+    state: present
+    validate: '/usr/sbin/visudo -cf %s'
+  loop:
+    - { key: 'timestamp_timeout', value: "{{ rhel_sudo_timestamp_timeout }}" }
+    - { key: 'use_pty', value: '' }
+    - { key: 'logfile', value: '"{{ rhel_sudo_logfile }}"' }
+    - { key: '!authenticate', value: '' }
+    - { key: 'env_reset', value: '' }
+    - { key: 'secure_path', value: '"{{ rhel_sudo_secure_path }}"' }
+    - { key: 'passwd_tries', value: "{{ rhel_sudo_passwd_tries }}" }
+  when: item.key != '!authenticate' or rhel_sudo_authenticate
+  tags:
+    - sudoers
+
+- name: Ensure sudo log file exists
+  ansible.builtin.file:
+    path: "{{ rhel_sudo_logfile }}"
+    state: touch
+    owner: root
+    group: root
+    mode: '0600'
+    modification_time: preserve
+    access_time: preserve
+  tags:
+    - logging
+
+- name: Set sudoers.d directory permissions
+  ansible.builtin.file:
+    path: /etc/sudoers.d
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ rhel_sudoers_d_permissions }}"
+  when: rhel_sudoers_d_enabled | bool
+  tags:
+    - permissions
+
+- name: Validate sudoers configuration
+  ansible.builtin.command: visudo -c
+  changed_when: false
+  tags:
+    - validation

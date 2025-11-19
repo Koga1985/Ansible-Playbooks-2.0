@@ -1,0 +1,10 @@
+# Rsyslog configuration for RHEL hardening
+# File permissions for logs
+$FileCreateMode {{ rhel_log_file_permissions }}
+
+# Log rotation
+$WorkDirectory /var/lib/rsyslog
+$ActionFileEnableSync on
+
+# Include all configuration files in rsyslog.d
+$IncludeConfig /etc/rsyslog.d/*.conf

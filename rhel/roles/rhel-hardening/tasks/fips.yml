@@ -1,0 +1,60 @@
+---
+# tasks/fips.yml - FIPS 140-2 Configuration
+# DoD STIG V-204392
+
+- name: Check current FIPS status
+  ansible.builtin.command: fips-mode-setup --check
+  register: fips_status
+  changed_when: false
+  failed_when: false
+  tags:
+    - validation
+
+- name: Display current FIPS status
+  ansible.builtin.debug:
+    msg: "Current FIPS status: {{ fips_status.stdout }}"
+  tags:
+    - validation
+
+- name: Enable FIPS mode
+  ansible.builtin.command: fips-mode-setup --enable
+  when:
+    - rhel_enable_fips | bool
+    - "'is disabled' in fips_status.stdout or 'is not enabled' in fips_status.stdout"
+  notify: reboot system
+  tags:
+    - fips
+
+- name: Verify FIPS mode enablement
+  ansible.builtin.command: fips-mode-setup --check
+  register: fips_final_status
+  changed_when: false
+  tags:
+    - validation
+
+- name: Display FIPS mode status
+  ansible.builtin.debug:
+    msg:
+      - "FIPS mode status: {{ fips_final_status.stdout }}"
+      - "WARNING: System reboot required to complete FIPS enablement"
+  when: rhel_enable_fips | bool
+  tags:
+    - validation
+
+- name: Warning about FIPS impact
+  ansible.builtin.debug:
+    msg:
+      - "==========================================="
+      - "FIPS MODE WARNING"
+      - "==========================================="
+      - "Enabling FIPS mode will:"
+      - "  - Require a system reboot"
+      - "  - Disable non-FIPS compliant algorithms"
+      - "  - May impact application compatibility"
+      - "  - May affect SSH connections"
+      - ""
+      - "Test thoroughly before production use!"
+      - "==========================================="
+  when: rhel_enable_fips | bool and "'is disabled' in fips_status.stdout or 'is not enabled' in fips_status.stdout"
+  tags:
+    - validation

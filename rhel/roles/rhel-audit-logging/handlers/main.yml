@@ -1,0 +1,12 @@
+---
+# handlers/main.yml - Audit and logging handlers
+
+- name: restart auditd
+  ansible.builtin.service:
+    name: auditd
+    state: restarted
+
+- name: restart rsyslog
+  ansible.builtin.systemd:
+    name: rsyslog
+    state: restarted

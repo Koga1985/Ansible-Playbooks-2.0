@@ -1,0 +1,79 @@
+---
+# playbooks/patch-management.yml - RHEL Patch Management
+# DoD STIG V-204393
+
+- name: RHEL Patch Management
+  hosts: rhel_servers
+  become: true
+  gather_facts: true
+  serial: "{{ patch_serial | default('100%') }}"
+
+  vars:
+    # Patch management settings
+    rhel_security_updates_only: false
+    rhel_auto_reboot: false
+    rhel_reboot_delay: 300
+
+  pre_tasks:
+    - name: Display patch management information
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "RHEL Patch Management"
+          - "=========================================="
+          - "Target hosts: {{ ansible_play_hosts | length }}"
+          - "Security updates only: {{ rhel_security_updates_only }}"
+          - "Auto reboot: {{ rhel_auto_reboot }}"
+          - "=========================================="
+      tags:
+        - always
+
+    - name: Check subscription status
+      ansible.builtin.command: subscription-manager status
+      register: sub_status
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+
+  roles:
+    - role: rhel/roles/rhel-patch-management
+      tags:
+        - patching
+        - updates
+
+  post_tasks:
+    - name: Check if reboot is required
+      ansible.builtin.shell: |
+        LAST_KERNEL=$(rpm -q --last kernel | head -1 | awk '{print $1}' | sed 's/kernel-//')
+        CURRENT_KERNEL=$(uname -r)
+        if [ "$LAST_KERNEL" != "$CURRENT_KERNEL" ]; then echo "yes"; else echo "no"; fi
+      register: reboot_required
+      changed_when: false
+      tags:
+        - always
+
+    - name: Display patch completion message
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "Patch Management Completed"
+          - "=========================================="
+          - "Host: {{ ansible_hostname }}"
+          - "Reboot required: {{ reboot_required.stdout }}"
+          - ""
+          - "{% if reboot_required.stdout == 'yes' %}IMPORTANT: Reboot system to apply kernel updates{% endif %}"
+          - "=========================================="
+      tags:
+        - always
+
+    - name: Reboot system if required and auto_reboot is enabled
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+      when:
+        - rhel_auto_reboot | bool
+        - reboot_required.stdout == "yes"
+      tags:
+        - reboot
+        - never

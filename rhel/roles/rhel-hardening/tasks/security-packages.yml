@@ -1,0 +1,21 @@
+---
+# tasks/security-packages.yml - Security Packages Installation
+
+- name: Install security packages
+  ansible.builtin.package:
+    name: "{{ rhel_security_packages }}"
+    state: present
+  tags:
+    - packages
+
+- name: Verify security packages installation
+  ansible.builtin.package_facts:
+    manager: auto
+  tags:
+    - validation
+
+- name: Display installed security packages
+  ansible.builtin.debug:
+    msg: "Security packages installed: {{ rhel_security_packages | intersect(ansible_facts.packages.keys() | list) }}"
+  tags:
+    - validation

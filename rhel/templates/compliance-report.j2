@@ -1,0 +1,52 @@
+RHEL Compliance Validation Report
+Generated: {{ ansible_date_time.iso8601 }}
+
+========================================
+System Information
+========================================
+Hostname: {{ compliance_summary.hostname }}
+Distribution: {{ compliance_summary.distribution }}
+Kernel: {{ compliance_summary.kernel }}
+Architecture: {{ ansible_architecture }}
+
+========================================
+Compliance Status
+========================================
+SSH Configuration: {{ compliance_summary.ssh_config }}
+Firewall Status: {{ compliance_summary.firewall }}
+SELinux Status: {{ compliance_summary.selinux }}
+Audit Service: {{ compliance_summary.audit }}
+FIPS Mode: {{ compliance_summary.fips }}
+Subscription Status: {{ compliance_summary.subscription }}
+
+========================================
+System Updates
+========================================
+Pending Updates: {{ compliance_summary.pending_updates }}
+
+========================================
+Overall Compliance
+========================================
+{% if compliance_summary.ssh_config == 'PASS' and compliance_summary.firewall == 'running' and compliance_summary.selinux in ['Enforcing', 'Permissive'] and compliance_summary.audit == 'RUNNING' %}
+Status: PASS
+All basic compliance checks passed.
+{% else %}
+Status: FAIL
+One or more compliance checks failed. Review the details above.
+{% endif %}
+
+========================================
+Recommendations
+========================================
+1. Run detailed SCAP assessment for comprehensive compliance validation
+2. Review and remediate any failed checks
+3. Ensure all security updates are applied
+4. Verify system configuration matches organizational policies
+
+========================================
+Next Steps
+========================================
+- For STIG compliance: Run SCAP STIG profile assessment
+- For CIS compliance: Run SCAP CIS profile assessment
+- Review audit logs for security events
+- Update system documentation with current configuration

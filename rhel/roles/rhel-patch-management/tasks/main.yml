@@ -1,0 +1,154 @@
+---
+# tasks/main.yml - RHEL Patch Management
+# DoD STIG V-204393
+
+- name: Display patch management information
+  ansible.builtin.debug:
+    msg:
+      - "=================================="
+      - "RHEL Patch Management"
+      - "=================================="
+      - "Security updates only: {{ rhel_security_updates_only }}"
+      - "Auto reboot: {{ rhel_auto_reboot }}"
+      - "Update kernel: {{ rhel_update_kernel }}"
+      - "=================================="
+  tags:
+    - always
+
+- name: Check subscription status
+  ansible.builtin.command: subscription-manager status
+  register: subscription_status
+  changed_when: false
+  failed_when: false
+  tags:
+    - validation
+
+- name: Update package cache
+  ansible.builtin.dnf:
+    update_cache: true
+  when: rhel_update_cache | bool
+  tags:
+    - cache
+
+- name: Check for available updates
+  ansible.builtin.dnf:
+    list: updates
+  register: available_updates
+  tags:
+    - validation
+
+- name: Display available updates
+  ansible.builtin.debug:
+    msg: "Available updates: {{ available_updates.results | length }}"
+  tags:
+    - validation
+
+- name: Install security updates only (STIG V-204393)
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+    security: true
+    exclude: "{{ rhel_exclude_packages | join(',') }}"
+  when:
+    - rhel_security_updates_only | bool
+    - not rhel_check_only | bool
+    - not rhel_download_only | bool
+  notify: reboot if required
+  tags:
+    - updates
+    - security-updates
+
+- name: Install all updates
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+    exclude: "{{ rhel_exclude_packages | join(',') }}"
+  when:
+    - not rhel_security_updates_only | bool
+    - rhel_update_all_packages | bool
+    - not rhel_check_only | bool
+    - not rhel_download_only | bool
+  notify: reboot if required
+  tags:
+    - updates
+
+- name: Update specific packages
+  ansible.builtin.dnf:
+    name: "{{ rhel_packages_to_update }}"
+    state: latest
+  when:
+    - rhel_packages_to_update | length > 0
+    - not rhel_check_only | bool
+    - not rhel_download_only | bool
+  tags:
+    - updates
+
+- name: Update kernel
+  ansible.builtin.dnf:
+    name: kernel
+    state: latest
+  when:
+    - rhel_update_kernel | bool
+    - not rhel_check_only | bool
+    - not rhel_download_only | bool
+  notify: reboot if required
+  tags:
+    - updates
+    - kernel
+
+- name: Clean package cache
+  ansible.builtin.dnf:
+    autoremove: true
+  when: rhel_clean_cache | bool
+  tags:
+    - cleanup
+
+- name: Check if reboot is required
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: reboot_required_file
+  tags:
+    - validation
+
+- name: Check for new kernel
+  ansible.builtin.shell: |
+    LAST_KERNEL=$(rpm -q --last kernel | head -1 | awk '{print $1}' | sed 's/kernel-//')
+    CURRENT_KERNEL=$(uname -r)
+    if [ "$LAST_KERNEL" != "$CURRENT_KERNEL" ]; then
+      echo "reboot_required"
+    fi
+  register: kernel_check
+  changed_when: false
+  tags:
+    - validation
+
+- name: Display reboot status
+  ansible.builtin.debug:
+    msg:
+      - "Reboot required: {{ 'yes' if kernel_check.stdout == 'reboot_required' else 'no' }}"
+      - "Auto reboot: {{ rhel_auto_reboot }}"
+  tags:
+    - validation
+
+- name: Generate update report
+  ansible.builtin.template:
+    src: update-report.j2
+    dest: "{{ rhel_update_report_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: rhel_generate_update_report | bool
+  tags:
+    - report
+
+- name: Display patch management completion
+  ansible.builtin.debug:
+    msg:
+      - "=================================="
+      - "Patch Management Completed"
+      - "=================================="
+      - "Updates installed: {{ available_updates.results | length }}"
+      - "Reboot required: {{ 'yes' if kernel_check.stdout == 'reboot_required' else 'no' }}"
+      - "=================================="
+  tags:
+    - always

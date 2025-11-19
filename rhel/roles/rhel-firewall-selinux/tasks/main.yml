@@ -1,0 +1,187 @@
+---
+# tasks/main.yml - RHEL Firewall and SELinux Configuration
+# DoD STIG V-204401, V-204500 through V-204510
+
+- name: Display firewall and SELinux information
+  ansible.builtin.debug:
+    msg:
+      - "=================================="
+      - "RHEL Firewall and SELinux Config"
+      - "=================================="
+      - "SELinux state: {{ rhel_selinux_state }}"
+      - "Firewall enabled: {{ rhel_firewall_enabled }}"
+      - "Default zone: {{ rhel_firewall_default_zone }}"
+      - "=================================="
+  tags:
+    - always
+
+# SELinux Configuration
+- name: Install SELinux packages
+  ansible.builtin.package:
+    name:
+      - libselinux-python3
+      - policycoreutils
+      - policycoreutils-python-utils
+      - selinux-policy
+      - selinux-policy-targeted
+    state: present
+  tags:
+    - packages
+    - selinux
+
+- name: Install SELinux troubleshooting tools
+  ansible.builtin.package:
+    name:
+      - setroubleshoot
+      - setools-console
+    state: present
+  when: rhel_install_selinux_tools | bool
+  tags:
+    - packages
+    - selinux
+
+- name: Configure SELinux state (STIG V-204401)
+  ansible.posix.selinux:
+    policy: "{{ rhel_selinux_policy }}"
+    state: "{{ rhel_selinux_state }}"
+  register: selinux_config
+  tags:
+    - selinux
+
+- name: Set SELinux booleans
+  ansible.posix.seboolean:
+    name: "{{ item.key }}"
+    state: "{{ item.value }}"
+    persistent: true
+  loop: "{{ rhel_selinux_booleans | dict2items }}"
+  when: rhel_selinux_booleans | length > 0
+  tags:
+    - selinux
+
+- name: Display SELinux status
+  ansible.builtin.command: getenforce
+  register: selinux_status
+  changed_when: false
+  tags:
+    - validation
+
+- name: SELinux relabel warning
+  ansible.builtin.debug:
+    msg:
+      - "WARNING: SELinux state changed"
+      - "A system reboot may be required"
+      - "File system relabeling may occur on next boot"
+  when: selinux_config is changed
+  tags:
+    - validation
+
+# Firewall Configuration
+- name: Install firewalld (STIG V-204500)
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+  tags:
+    - packages
+    - firewall
+
+- name: Ensure firewalld is enabled and started
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+  when: rhel_firewall_enabled | bool
+  tags:
+    - firewall
+    - services
+
+- name: Set default firewall zone
+  ansible.posix.firewalld:
+    zone: "{{ rhel_firewall_default_zone }}"
+    state: present
+    permanent: true
+  notify: reload firewalld
+  tags:
+    - firewall
+
+- name: Configure firewall services
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    zone: "{{ rhel_firewall_default_zone }}"
+    permanent: true
+    state: enabled
+  loop: "{{ rhel_firewall_services }}"
+  notify: reload firewalld
+  tags:
+    - firewall
+
+- name: Configure firewall ports
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    zone: "{{ rhel_firewall_default_zone }}"
+    permanent: true
+    state: enabled
+  loop: "{{ rhel_firewall_ports }}"
+  when: rhel_firewall_ports | length > 0
+  notify: reload firewalld
+  tags:
+    - firewall
+
+- name: Remove firewall services
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    zone: "{{ rhel_firewall_default_zone }}"
+    permanent: true
+    state: disabled
+  loop: "{{ rhel_firewall_remove_services }}"
+  when: rhel_firewall_remove_services | length > 0
+  notify: reload firewalld
+  tags:
+    - firewall
+
+- name: Configure rich rules
+  ansible.posix.firewalld:
+    rich_rule: "{{ item }}"
+    zone: "{{ rhel_firewall_default_zone }}"
+    permanent: true
+    state: enabled
+  loop: "{{ rhel_firewall_rich_rules }}"
+  when: rhel_firewall_rich_rules | length > 0
+  notify: reload firewalld
+  tags:
+    - firewall
+
+- name: Configure masquerading
+  ansible.posix.firewalld:
+    masquerade: "{{ 'enabled' if rhel_firewall_masquerade else 'disabled' }}"
+    zone: "{{ rhel_firewall_default_zone }}"
+    permanent: true
+    state: enabled
+  when: rhel_firewall_masquerade | bool
+  notify: reload firewalld
+  tags:
+    - firewall
+
+- name: Get firewall status
+  ansible.builtin.command: firewall-cmd --list-all
+  register: firewall_status
+  changed_when: false
+  tags:
+    - validation
+
+- name: Display firewall configuration
+  ansible.builtin.debug:
+    msg: "{{ firewall_status.stdout_lines }}"
+  tags:
+    - validation
+
+- name: Display configuration completion
+  ansible.builtin.debug:
+    msg:
+      - "=================================="
+      - "Configuration Completed"
+      - "=================================="
+      - "SELinux status: {{ selinux_status.stdout }}"
+      - "Firewall configured for zone: {{ rhel_firewall_default_zone }}"
+      - "=================================="
+  tags:
+    - always

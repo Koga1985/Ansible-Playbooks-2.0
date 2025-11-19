@@ -1,0 +1,35 @@
+---
+# tasks/configure-selinux.yml - SELinux configuration
+# DoD STIG V-204401
+
+- name: Install SELinux packages
+  ansible.builtin.package:
+    name:
+      - libselinux-python3
+      - policycoreutils
+      - selinux-policy-targeted
+    state: present
+  tags:
+    - selinux
+
+- name: Configure SELinux to enforcing mode
+  ansible.posix.selinux:
+    policy: targeted
+    state: enforcing
+  tags:
+    - selinux
+
+- name: Check SELinux status
+  ansible.builtin.command: getenforce
+  register: selinux_status
+  changed_when: false
+  tags:
+    - selinux
+    - validation
+
+- name: Display SELinux status
+  ansible.builtin.debug:
+    msg: "SELinux mode: {{ selinux_status.stdout }}"
+  tags:
+    - selinux
+    - validation

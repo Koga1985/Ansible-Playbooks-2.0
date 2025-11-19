@@ -1,0 +1,29 @@
+---
+galaxy_info:
+  role_name: rhel-user-access
+  author: Ansible Automation
+  description: Production-ready RHEL user and access management with least privilege enforcement
+  company: Enterprise IT
+  license: MIT
+
+  min_ansible_version: "2.12"
+
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+
+  galaxy_tags:
+    - rhel
+    - users
+    - access
+    - security
+    - accounts
+    - sudo
+    - redhat
+    - linux
+
+dependencies: []
+
+allow_duplicates: false

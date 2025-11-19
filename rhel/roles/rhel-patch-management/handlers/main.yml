@@ -1,0 +1,8 @@
+---
+# handlers/main.yml - Patch management handlers
+
+- name: reboot if required
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ rhel_reboot_timeout }}"
+    post_reboot_delay: "{{ rhel_post_reboot_delay }}"
+  when: rhel_auto_reboot | bool

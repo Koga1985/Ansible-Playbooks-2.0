@@ -1,0 +1,134 @@
+---
+# tasks/main.yml - RHEL User and Access Management
+
+- name: Display user management information
+  ansible.builtin.debug:
+    msg:
+      - "=================================="
+      - "RHEL User and Access Management"
+      - "=================================="
+      - "Users to manage: {{ rhel_users | length }}"
+      - "Sudo groups: {{ rhel_sudo_groups }}"
+      - "=================================="
+  tags:
+    - always
+
+- name: Create groups
+  ansible.builtin.group:
+    name: "{{ item.name }}"
+    gid: "{{ item.gid | default(omit) }}"
+    state: present
+  loop: "{{ rhel_groups }}"
+  when: rhel_groups | length > 0
+  tags:
+    - groups
+
+- name: Create/manage users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    groups: "{{ item.groups | default(omit) }}"
+    password: "{{ item.password | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+    shell: "{{ item.shell | default('/bin/bash') }}"
+    create_home: true
+    home: "{{ item.home | default('/home/' + item.name) }}"
+  loop: "{{ rhel_users }}"
+  when: rhel_users | length > 0
+  tags:
+    - users
+
+- name: Set home directory permissions
+  ansible.builtin.file:
+    path: "{{ item.home | default('/home/' + item.name) }}"
+    mode: "{{ rhel_home_dir_mode }}"
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+  loop: "{{ rhel_users }}"
+  when:
+    - rhel_users | length > 0
+    - item.state | default('present') == 'present'
+  tags:
+    - permissions
+
+- name: Configure SSH keys
+  ansible.posix.authorized_key:
+    user: "{{ item.name }}"
+    key: "{{ item.ssh_key }}"
+    state: present
+  loop: "{{ rhel_users }}"
+  when:
+    - rhel_manage_ssh_keys | bool
+    - rhel_users | length > 0
+    - item.ssh_key is defined
+    - item.state | default('present') == 'present'
+  tags:
+    - ssh_keys
+
+- name: Configure password aging for users
+  ansible.builtin.command: >
+    chage --maxdays {{ rhel_password_max_days }}
+          --mindays {{ rhel_password_min_days }}
+          --warndays {{ rhel_password_warn_age }}
+          {{ item.name }}
+  loop: "{{ rhel_users }}"
+  when:
+    - rhel_users | length > 0
+    - item.state | default('present') == 'present'
+  changed_when: false
+  tags:
+    - users
+
+- name: Force password change on first login
+  ansible.builtin.command: chage -d 0 {{ item.name }}
+  loop: "{{ rhel_users }}"
+  when:
+    - rhel_force_password_change | bool
+    - rhel_users | length > 0
+    - item.state | default('present') == 'present'
+    - item.password is defined
+  changed_when: false
+  tags:
+    - users
+
+- name: Remove unauthorized users
+  ansible.builtin.user:
+    name: "{{ item }}"
+    state: absent
+    remove: true
+  loop: "{{ rhel_remove_users }}"
+  when: rhel_remove_users | length > 0
+  tags:
+    - users
+
+- name: Find inactive accounts
+  ansible.builtin.shell: |
+    lastlog -b {{ rhel_inactive_days }} | awk 'NR>1 && !/Never logged in/ {print $1}'
+  register: inactive_users
+  changed_when: false
+  when: rhel_lock_inactive | bool
+  tags:
+    - validation
+
+- name: Lock inactive accounts
+  ansible.builtin.user:
+    name: "{{ item }}"
+    password_lock: true
+  loop: "{{ inactive_users.stdout_lines | default([]) }}"
+  when:
+    - rhel_lock_inactive | bool
+    - inactive_users.stdout_lines is defined
+    - item not in ['root']
+  tags:
+    - users
+
+- name: Display user management completion
+  ansible.builtin.debug:
+    msg:
+      - "=================================="
+      - "User Management Completed"
+      - "=================================="
+      - "Users managed: {{ rhel_users | length }}"
+      - "Groups created: {{ rhel_groups | length }}"
+      - "=================================="
+  tags:
+    - always

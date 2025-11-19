@@ -1,0 +1,67 @@
+---
+# defaults/main.yml - RHEL Patch Management Role
+# DoD STIG V-204393
+
+# =============================================================================
+# Patch Management Configuration
+# =============================================================================
+
+# Automatic reboot after updates
+rhel_auto_reboot: false
+
+# Reboot delay in seconds
+rhel_reboot_delay: 300
+
+# Install security updates only
+rhel_security_updates_only: false
+
+# Exclude packages from updates
+rhel_exclude_packages: []
+
+# Update kernel
+rhel_update_kernel: true
+
+# Clean package cache after updates
+rhel_clean_cache: true
+
+# Check for available updates without installing
+rhel_check_only: false
+
+# Download updates without installing
+rhel_download_only: false
+
+# Reboot timeout in seconds
+rhel_reboot_timeout: 600
+
+# Post-reboot delay in seconds
+rhel_post_reboot_delay: 30
+
+# Update all packages
+rhel_update_all_packages: true
+
+# Specific packages to update (empty means all)
+rhel_packages_to_update: []
+
+# Enable repository during update
+rhel_enable_repos: []
+
+# Disable repository during update
+rhel_disable_repos: []
+
+# Subscription manager auto-attach
+rhel_subscription_auto_attach: false
+
+# Update metadata cache before checking
+rhel_update_cache: true
+
+# Generate update report
+rhel_generate_update_report: true
+
+# Update report path
+rhel_update_report_path: /tmp/rhel-update-report.txt
+
+# Pre-update snapshot (requires LVM)
+rhel_create_snapshot: false
+
+# Snapshot size
+rhel_snapshot_size: 5G

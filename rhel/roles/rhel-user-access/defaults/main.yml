@@ -1,0 +1,41 @@
+---
+# defaults/main.yml - RHEL User and Access Management Role
+# DoD STIG Account Management Controls
+
+# Users to create/manage
+rhel_users: []
+#  - name: user1
+#    groups: wheel
+#    ssh_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+#    password: "{{ user1_password | password_hash('sha512') }}"
+#    state: present
+
+# Groups to create
+rhel_groups: []
+#  - name: developers
+#    gid: 5000
+
+# Groups with sudo access
+rhel_sudo_groups:
+  - wheel
+
+# Remove unauthorized users
+rhel_remove_users: []
+
+# Lock inactive accounts
+rhel_lock_inactive: true
+rhel_inactive_days: 35
+
+# SSH key management
+rhel_manage_ssh_keys: true
+
+# Home directory permissions
+rhel_home_dir_mode: "0750"
+
+# Password expiration for new users
+rhel_password_max_days: 60
+rhel_password_min_days: 1
+rhel_password_warn_age: 7
+
+# Force password change on first login
+rhel_force_password_change: false

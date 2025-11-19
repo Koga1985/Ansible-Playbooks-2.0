@@ -1,0 +1,42 @@
+---
+# tasks/configure-aide.yml - AIDE file integrity monitoring
+# DoD STIG V-204447
+
+- name: Install AIDE
+  ansible.builtin.package:
+    name: aide
+    state: present
+  tags:
+    - aide
+
+- name: Check if AIDE database exists
+  ansible.builtin.stat:
+    path: /var/lib/aide/aide.db.gz
+  register: aide_db
+  tags:
+    - aide
+
+- name: Display AIDE database status
+  ansible.builtin.debug:
+    msg: "AIDE database exists: {{ aide_db.stat.exists }}"
+  tags:
+    - aide
+
+- name: Configure AIDE daily check
+  ansible.builtin.cron:
+    name: "AIDE integrity check"
+    job: "/usr/sbin/aide --check | /usr/bin/mail -s 'AIDE Report' root"
+    special_time: daily
+    user: root
+  tags:
+    - aide
+
+- name: AIDE initialization notice
+  ansible.builtin.debug:
+    msg:
+      - "AIDE installed successfully"
+      - "Run 'aide --init' manually to create initial database"
+      - "Then: mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz"
+  when: not aide_db.stat.exists
+  tags:
+    - aide

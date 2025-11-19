@@ -1,0 +1,113 @@
+---
+# tasks/filesystem.yml - File System Hardening
+# DoD STIG V-204446 through V-204465
+
+- name: Check for separate partitions (STIG V-204446 through V-204450)
+  ansible.builtin.shell: |
+    df -h {{ item }} | tail -1 | awk '{print $6}'
+  register: partition_check
+  changed_when: false
+  failed_when: false
+  loop:
+    - /tmp
+    - /var
+    - /var/log
+    - /var/log/audit
+    - /home
+  when: rhel_check_separate_tmp | bool or rhel_check_separate_var | bool or rhel_check_separate_var_log | bool or rhel_check_separate_var_log_audit | bool or rhel_check_separate_home | bool
+  tags:
+    - validation
+
+- name: Set system file permissions (STIG V-204459)
+  ansible.builtin.file:
+    path: "{{ item.key }}"
+    mode: "{{ item.value }}"
+    owner: root
+    group: root
+  loop: "{{ rhel_system_files_permissions | dict2items }}"
+  tags:
+    - permissions
+
+- name: Find world-writable files (STIG V-204456)
+  ansible.builtin.shell: |
+    find / -xdev -type f -perm -002 ! -path "/proc/*" ! -path "/sys/*" 2>/dev/null
+  register: world_writable_files
+  changed_when: false
+  failed_when: false
+  when: rhel_find_world_writable_files | bool
+  tags:
+    - validation
+    - never
+
+- name: Find unowned files (STIG V-204457)
+  ansible.builtin.shell: |
+    find / -xdev -nouser ! -path "/proc/*" ! -path "/sys/*" 2>/dev/null
+  register: unowned_files
+  changed_when: false
+  failed_when: false
+  when: rhel_find_unowned_files | bool
+  tags:
+    - validation
+    - never
+
+- name: Find ungrouped files (STIG V-204458)
+  ansible.builtin.shell: |
+    find / -xdev -nogroup ! -path "/proc/*" ! -path "/sys/*" 2>/dev/null
+  register: ungrouped_files
+  changed_when: false
+  failed_when: false
+  when: rhel_find_ungrouped_files | bool
+  tags:
+    - validation
+    - never
+
+- name: Find SUID/SGID files (STIG V-204460)
+  ansible.builtin.shell: |
+    find / -xdev \( -perm -4000 -o -perm -2000 \) -type f ! -path "/proc/*" ! -path "/sys/*" 2>/dev/null
+  register: suid_sgid_files
+  changed_when: false
+  failed_when: false
+  when: rhel_find_suid_sgid_files | bool
+  tags:
+    - validation
+    - never
+
+- name: Disable core dumps (STIG V-204461)
+  ansible.builtin.lineinfile:
+    path: /etc/security/limits.conf
+    line: '*     hard   core    0'
+    state: present
+  when: rhel_disable_core_dumps | bool
+  tags:
+    - coredumps
+
+- name: Configure systemd-coredump (STIG V-204463)
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/coredump.conf
+    regexp: "^#?Storage="
+    line: "Storage={{ rhel_systemd_coredump_storage }}"
+    state: present
+  when: rhel_disable_core_dumps | bool
+  notify: reload systemd
+  tags:
+    - coredumps
+
+- name: Disable kdump service (STIG V-204464)
+  ansible.builtin.systemd:
+    name: kdump
+    enabled: false
+    state: stopped
+  when: not rhel_kdump_enabled | bool
+  failed_when: false
+  tags:
+    - services
+
+- name: Disable core dumps for SUID programs (STIG V-204465)
+  ansible.posix.sysctl:
+    name: fs.suid_dumpable
+    value: '0'
+    state: present
+    reload: true
+  when: rhel_disable_suid_core_dumps | bool
+  tags:
+    - sysctl

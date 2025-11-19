@@ -1,0 +1,164 @@
+---
+# tasks/main.yml - RHEL System Hardening
+# DoD STIG and NIST SP 800-53 Compliant
+
+- name: Display hardening information
+  ansible.builtin.debug:
+    msg:
+      - "=================================="
+      - "RHEL System Hardening"
+      - "=================================="
+      - "STIG Level: {{ rhel_stig_level }}"
+      - "NIST Controls: {{ rhel_apply_nist_controls }}"
+      - "CIS Benchmark: {{ rhel_apply_cis_benchmark }}"
+      - "FIPS Mode: {{ rhel_enable_fips }}"
+      - "=================================="
+  tags:
+    - always
+
+- name: Include pre-flight checks
+  ansible.builtin.include_tasks: preflight.yml
+  when: rhel_run_preflight_checks | bool
+  tags:
+    - preflight
+    - always
+
+- name: Include FIPS configuration
+  ansible.builtin.include_tasks: fips.yml
+  when: rhel_enable_fips | bool or rhel_check_fips_status | bool
+  tags:
+    - fips
+    - hardening
+    - stig
+
+- name: Include SSH hardening
+  ansible.builtin.include_tasks: ssh.yml
+  tags:
+    - ssh
+    - hardening
+    - stig
+    - nist
+
+- name: Include password policy configuration
+  ansible.builtin.include_tasks: password-policy.yml
+  tags:
+    - passwords
+    - accounts
+    - hardening
+    - stig
+    - nist
+
+- name: Include account security configuration
+  ansible.builtin.include_tasks: account-security.yml
+  tags:
+    - accounts
+    - security
+    - hardening
+    - stig
+
+- name: Include PAM configuration
+  ansible.builtin.include_tasks: pam.yml
+  tags:
+    - pam
+    - authentication
+    - hardening
+    - stig
+
+- name: Include file system hardening
+  ansible.builtin.include_tasks: filesystem.yml
+  tags:
+    - filesystem
+    - hardening
+    - stig
+
+- name: Include network hardening
+  ansible.builtin.include_tasks: network.yml
+  tags:
+    - network
+    - hardening
+    - stig
+    - nist
+
+- name: Include service hardening
+  ansible.builtin.include_tasks: services.yml
+  tags:
+    - services
+    - hardening
+    - stig
+
+- name: Include kernel hardening
+  ansible.builtin.include_tasks: kernel.yml
+  tags:
+    - kernel
+    - hardening
+    - stig
+
+- name: Include sudo configuration
+  ansible.builtin.include_tasks: sudo.yml
+  tags:
+    - sudo
+    - hardening
+    - stig
+
+- name: Include login banner configuration
+  ansible.builtin.include_tasks: banner.yml
+  tags:
+    - banner
+    - hardening
+    - stig
+
+- name: Include time synchronization configuration
+  ansible.builtin.include_tasks: time-sync.yml
+  tags:
+    - time
+    - ntp
+    - hardening
+    - stig
+
+- name: Include security packages installation
+  ansible.builtin.include_tasks: security-packages.yml
+  when: rhel_install_security_packages | bool
+  tags:
+    - packages
+    - security
+    - hardening
+
+- name: Include AIDE configuration
+  ansible.builtin.include_tasks: aide.yml
+  when: rhel_configure_aide | bool
+  tags:
+    - aide
+    - integrity
+    - hardening
+    - stig
+
+- name: Include crypto policy configuration
+  ansible.builtin.include_tasks: crypto-policy.yml
+  tags:
+    - crypto
+    - hardening
+    - stig
+
+- name: Display hardening completion message
+  ansible.builtin.debug:
+    msg:
+      - "=================================="
+      - "RHEL Hardening Completed"
+      - "=================================="
+      - "System has been hardened according to:"
+      - "  - DoD STIG {{ rhel_stig_level }} level"
+      - "  - NIST SP 800-53 Rev 5"
+      - "  - CIS Benchmark controls"
+      - ""
+      - "IMPORTANT: Review changes and reboot if required"
+      - "=================================="
+  tags:
+    - always
+
+- name: Include compliance validation
+  ansible.builtin.include_tasks: compliance-validation.yml
+  when: rhel_run_compliance_validation | bool
+  tags:
+    - validation
+    - compliance
+    - never

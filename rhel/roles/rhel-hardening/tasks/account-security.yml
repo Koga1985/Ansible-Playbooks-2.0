@@ -1,0 +1,131 @@
+---
+# tasks/account-security.yml - Account Security Configuration
+# DoD STIG V-204419 through V-204430
+
+- name: Configure account lockout with faillock (STIG V-204419, V-204420)
+  ansible.builtin.lineinfile:
+    path: "{{ item.path }}"
+    insertafter: "{{ item.after }}"
+    line: "{{ item.line }}"
+    state: present
+  loop:
+    - path: /etc/pam.d/system-auth
+      after: '^auth\s+required\s+pam_env.so'
+      line: 'auth        required      pam_faillock.so preauth silent deny={{ rhel_failed_login_attempts }} unlock_time={{ rhel_account_lockout_duration }} fail_interval={{ rhel_failed_login_reset_interval }}'
+    - path: /etc/pam.d/system-auth
+      after: '^auth\s+sufficient\s+pam_unix.so'
+      line: 'auth        [default=die] pam_faillock.so authfail deny={{ rhel_failed_login_attempts }} unlock_time={{ rhel_account_lockout_duration }} fail_interval={{ rhel_failed_login_reset_interval }}'
+    - path: /etc/pam.d/password-auth
+      after: '^auth\s+required\s+pam_env.so'
+      line: 'auth        required      pam_faillock.so preauth silent deny={{ rhel_failed_login_attempts }} unlock_time={{ rhel_account_lockout_duration }} fail_interval={{ rhel_failed_login_reset_interval }}'
+    - path: /etc/pam.d/password-auth
+      after: '^auth\s+sufficient\s+pam_unix.so'
+      line: 'auth        [default=die] pam_faillock.so authfail deny={{ rhel_failed_login_attempts }} unlock_time={{ rhel_account_lockout_duration }} fail_interval={{ rhel_failed_login_reset_interval }}'
+  when: rhel_faillock_enabled | bool
+  tags:
+    - pam
+    - faillock
+
+- name: Configure login delay after failure (STIG V-204422)
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^FAIL_DELAY'
+    line: "FAIL_DELAY\t{{ rhel_login_fail_delay // 1000000 }}"
+    state: present
+  tags:
+    - login_defs
+
+- name: Configure root login restrictions (STIG V-204423, V-204424)
+  ansible.builtin.template:
+    src: securetty.j2
+    dest: /etc/securetty
+    owner: root
+    group: root
+    mode: '0600'
+  when: rhel_root_console_only | bool
+  tags:
+    - securetty
+
+- name: Find system accounts (UID < 1000)
+  ansible.builtin.shell: |
+    awk -F: '($3 < 1000 && $3 != 0) {print $1}' /etc/passwd
+  register: system_accounts
+  changed_when: false
+  tags:
+    - accounts
+
+- name: Lock system accounts (STIG V-204426)
+  ansible.builtin.user:
+    name: "{{ item }}"
+    shell: /sbin/nologin
+    password_lock: true
+  loop: "{{ system_accounts.stdout_lines }}"
+  when:
+    - rhel_lock_system_accounts | bool
+    - item not in ['root', 'sync', 'shutdown', 'halt']
+  tags:
+    - accounts
+
+- name: Find inactive user accounts
+  ansible.builtin.shell: |
+    lastlog -b {{ rhel_account_inactive_days }} | awk 'NR>1 && !/Never logged in/ {print $1}'
+  register: inactive_accounts
+  changed_when: false
+  failed_when: false
+  when: rhel_lock_inactive_accounts | bool
+  tags:
+    - accounts
+
+- name: Lock inactive accounts (STIG V-204425)
+  ansible.builtin.user:
+    name: "{{ item }}"
+    password_lock: true
+  loop: "{{ inactive_accounts.stdout_lines | default([]) }}"
+  when:
+    - rhel_lock_inactive_accounts | bool
+    - item not in ['root']
+    - inactive_accounts.stdout_lines is defined
+  tags:
+    - accounts
+
+- name: Find accounts with UID 0 (STIG V-204427)
+  ansible.builtin.shell: |
+    awk -F: '($3 == 0 && $1 != "root") {print $1}' /etc/passwd
+  register: uid_zero_accounts
+  changed_when: false
+  failed_when: uid_zero_accounts.stdout_lines | length > 0 and rhel_enforce_single_root_uid | bool
+  tags:
+    - accounts
+    - validation
+
+- name: Set home directory permissions (STIG V-204428)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "{{ rhel_home_dir_permissions }}"
+    state: directory
+  loop: "{{ ansible_facts.getent_passwd.values() | map(attribute=4) | list }}"
+  when:
+    - item != '/root'
+    - item not in ['/sbin/nologin', '/bin/false', '/usr/sbin/nologin', '/bin/sync']
+  failed_when: false
+  tags:
+    - permissions
+    - never
+
+- name: Find world-writable files in home directories (STIG V-204429, V-204430)
+  ansible.builtin.shell: |
+    find /home -type f -perm -002 -ls
+  register: world_writable_files
+  changed_when: false
+  failed_when: false
+  tags:
+    - validation
+
+- name: Display world-writable files warning
+  ansible.builtin.debug:
+    msg:
+      - "WARNING: World-writable files found in home directories:"
+      - "{{ world_writable_files.stdout_lines }}"
+  when: world_writable_files.stdout_lines | length > 0
+  tags:
+    - validation

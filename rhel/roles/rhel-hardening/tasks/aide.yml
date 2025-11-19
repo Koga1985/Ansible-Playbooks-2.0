@@ -1,0 +1,58 @@
+---
+# tasks/aide.yml - AIDE Configuration
+# DoD STIG V-204447
+
+- name: Ensure AIDE is installed
+  ansible.builtin.package:
+    name: aide
+    state: present
+  tags:
+    - packages
+
+- name: Check if AIDE database exists
+  ansible.builtin.stat:
+    path: "{{ rhel_aide_db_path }}"
+  register: aide_db
+  tags:
+    - validation
+
+- name: Initialize AIDE database
+  ansible.builtin.command: aide --init
+  when: not aide_db.stat.exists
+  async: 3600
+  poll: 30
+  register: aide_init
+  tags:
+    - aide
+    - never
+
+- name: Move AIDE database to correct location
+  ansible.builtin.command: mv /var/lib/aide/aide.db.new.gz {{ rhel_aide_db_path }}
+  when:
+    - not aide_db.stat.exists
+    - aide_init is defined
+    - aide_init.finished is defined
+  tags:
+    - aide
+    - never
+
+- name: Configure AIDE check schedule
+  ansible.builtin.cron:
+    name: "AIDE integrity check"
+    job: "/usr/sbin/aide --check | /usr/bin/mail -s 'AIDE Integrity Check' root"
+    special_time: "{{ rhel_aide_check_schedule }}"
+    user: root
+    state: present
+  tags:
+    - aide
+    - cron
+
+- name: Display AIDE status
+  ansible.builtin.debug:
+    msg:
+      - "AIDE configuration completed"
+      - "Database path: {{ rhel_aide_db_path }}"
+      - "Check schedule: {{ rhel_aide_check_schedule }}"
+      - "Run 'aide --init' manually if database doesn't exist"
+  tags:
+    - validation

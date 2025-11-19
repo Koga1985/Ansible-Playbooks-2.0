@@ -1,0 +1,98 @@
+# Example Ansible Inventory for RHEL Automation
+#
+# Copy this file to 'inventory' and customize for your environment:
+#   cp inventory.example inventory
+#
+# Usage:
+#   ansible-playbook playbooks/system-hardening.yml -i inventory
+
+[rhel_servers]
+# Production RHEL servers
+rhel-prod-01.example.com ansible_host=192.168.1.10
+rhel-prod-02.example.com ansible_host=192.168.1.11
+rhel-prod-03.example.com ansible_host=192.168.1.12
+
+[rhel_dev]
+# Development RHEL servers
+rhel-dev-01.example.com ansible_host=192.168.2.10
+rhel-dev-02.example.com ansible_host=192.168.2.11
+
+[rhel_test]
+# Test RHEL servers
+rhel-test-01.example.com ansible_host=192.168.3.10
+
+[rhel8]
+# RHEL 8.x specific hosts
+rhel-prod-01.example.com
+rhel-dev-01.example.com
+
+[rhel9]
+# RHEL 9.x specific hosts
+rhel-prod-02.example.com
+rhel-prod-03.example.com
+rhel-dev-02.example.com
+rhel-test-01.example.com
+
+[webservers]
+# Web servers requiring HTTP/HTTPS
+rhel-prod-01.example.com
+rhel-prod-02.example.com
+
+[databases]
+# Database servers
+rhel-prod-03.example.com
+
+# Group Variables
+[rhel_servers:vars]
+ansible_user=ansible
+ansible_become=true
+ansible_become_method=sudo
+ansible_python_interpreter=/usr/bin/python3
+
+# RHEL 8 Specific Variables
+[rhel8:vars]
+rhel_version=8
+rhel_stig_version=V1R14
+rhel_scap_content=/usr/share/xml/scap/ssg/content/ssg-rhel8-ds.xml
+
+# RHEL 9 Specific Variables
+[rhel9:vars]
+rhel_version=9
+rhel_stig_version=V1R3
+rhel_scap_content=/usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
+
+# Web Server Specific Variables
+[webservers:vars]
+rhel_firewall_services=['ssh', 'http', 'https']
+rhel_selinux_booleans={'httpd_can_network_connect': 'on'}
+
+# Database Server Specific Variables
+[databases:vars]
+rhel_firewall_ports=['3306/tcp', '5432/tcp']
+
+# Global Variables for All RHEL Servers
+[all:vars]
+# Compliance Settings
+rhel_stig_level=high
+rhel_apply_nist_controls=true
+rhel_enable_fips=false
+
+# SSH Configuration
+rhel_ssh_permit_root_login=false
+rhel_ssh_password_authentication=false
+rhel_ssh_port=22
+
+# SELinux
+rhel_selinux_state=enforcing
+
+# Firewall
+rhel_firewall_enabled=true
+rhel_firewall_default_zone=public
+
+# Patch Management
+rhel_auto_reboot=false
+rhel_security_updates_only=false
+
+# Audit Configuration
+rhel_audit_enabled=true
+rhel_audit_log_retention_days=90

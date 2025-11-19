@@ -1,0 +1,58 @@
+---
+# tasks/time-sync.yml - Time Synchronization Configuration
+# DoD STIG V-204541 through V-204545
+
+- name: Install chrony (STIG V-204542)
+  ansible.builtin.package:
+    name: chrony
+    state: present
+  when: rhel_time_sync_service == 'chronyd'
+  tags:
+    - packages
+
+- name: Remove ntpd if using chronyd
+  ansible.builtin.package:
+    name: ntp
+    state: absent
+  when: rhel_time_sync_service == 'chronyd'
+  tags:
+    - packages
+
+- name: Configure chrony NTP servers (STIG V-204543)
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: rhel_time_sync_service == 'chronyd'
+  notify: restart chronyd
+  tags:
+    - chrony
+
+- name: Ensure chronyd is enabled and started (STIG V-204541)
+  ansible.builtin.systemd:
+    name: chronyd
+    enabled: true
+    state: started
+  when: rhel_time_sync_enabled | bool and rhel_time_sync_service == 'chronyd'
+  tags:
+    - services
+
+- name: Verify time synchronization status
+  ansible.builtin.command: chronyc tracking
+  register: chrony_status
+  changed_when: false
+  failed_when: false
+  when: rhel_time_sync_service == 'chronyd'
+  tags:
+    - validation
+
+- name: Display time synchronization status
+  ansible.builtin.debug:
+    msg: "{{ chrony_status.stdout_lines }}"
+  when:
+    - rhel_time_sync_service == 'chronyd'
+    - chrony_status.stdout_lines is defined
+  tags:
+    - validation

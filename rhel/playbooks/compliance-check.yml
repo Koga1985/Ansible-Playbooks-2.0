@@ -1,0 +1,163 @@
+---
+# playbooks/compliance-check.yml - RHEL Compliance Validation
+# DoD STIG and NIST Compliance Checking
+
+- name: RHEL Compliance Validation
+  hosts: rhel_servers
+  become: true
+  gather_facts: true
+
+  vars:
+    generate_report: true
+    report_path: /tmp/compliance-{{ ansible_hostname }}-{{ ansible_date_time.epoch }}.txt
+
+  pre_tasks:
+    - name: Display compliance check information
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "RHEL Compliance Validation"
+          - "=========================================="
+          - "Target hosts: {{ ansible_play_hosts | length }}"
+          - "Report generation: {{ generate_report }}"
+          - "=========================================="
+      tags:
+        - always
+
+  tasks:
+    - name: Check SSH configuration
+      ansible.builtin.command: sshd -t
+      register: ssh_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+        - ssh
+
+    - name: Check firewall status
+      ansible.builtin.command: firewall-cmd --state
+      register: firewall_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+        - firewall
+
+    - name: Check SELinux status
+      ansible.builtin.command: getenforce
+      register: selinux_check
+      changed_when: false
+      tags:
+        - validation
+        - selinux
+
+    - name: Check audit service
+      ansible.builtin.systemd:
+        name: auditd
+      register: audit_check
+      tags:
+        - validation
+        - audit
+
+    - name: Check FIPS mode
+      ansible.builtin.command: fips-mode-setup --check
+      register: fips_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+        - fips
+
+    - name: Check for available updates
+      ansible.builtin.dnf:
+        list: updates
+      register: updates_check
+      tags:
+        - validation
+        - updates
+
+    - name: Check subscription status
+      ansible.builtin.command: subscription-manager status
+      register: subscription_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+
+    - name: Generate compliance summary
+      ansible.builtin.set_fact:
+        compliance_summary:
+          hostname: "{{ ansible_hostname }}"
+          distribution: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+          kernel: "{{ ansible_kernel }}"
+          ssh_config: "{{ 'PASS' if ssh_check.rc == 0 else 'FAIL' }}"
+          firewall: "{{ firewall_check.stdout if firewall_check.rc == 0 else 'NOT RUNNING' }}"
+          selinux: "{{ selinux_check.stdout }}"
+          audit: "{{ 'RUNNING' if audit_check.status.ActiveState == 'active' else 'NOT RUNNING' }}"
+          fips: "{{ fips_check.stdout }}"
+          pending_updates: "{{ updates_check.results | length }}"
+          subscription: "{{ 'ACTIVE' if 'Current' in subscription_check.stdout else 'INACTIVE' }}"
+      tags:
+        - report
+
+    - name: Display compliance summary
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "Compliance Validation Summary"
+          - "=========================================="
+          - "Hostname: {{ compliance_summary.hostname }}"
+          - "Distribution: {{ compliance_summary.distribution }}"
+          - "Kernel: {{ compliance_summary.kernel }}"
+          - ""
+          - "SSH Configuration: {{ compliance_summary.ssh_config }}"
+          - "Firewall Status: {{ compliance_summary.firewall }}"
+          - "SELinux Status: {{ compliance_summary.selinux }}"
+          - "Audit Service: {{ compliance_summary.audit }}"
+          - "FIPS Mode: {{ compliance_summary.fips }}"
+          - "Pending Updates: {{ compliance_summary.pending_updates }}"
+          - "Subscription: {{ compliance_summary.subscription }}"
+          - ""
+          - "=========================================="
+          - "Compliance Status: {% if compliance_summary.ssh_config == 'PASS' and compliance_summary.firewall == 'running' and compliance_summary.selinux in ['Enforcing', 'Permissive'] and compliance_summary.audit == 'RUNNING' %}PASS{% else %}FAIL{% endif %}"
+          - "=========================================="
+      tags:
+        - report
+
+    - name: Generate compliance report file
+      ansible.builtin.template:
+        src: ../templates/compliance-report.j2
+        dest: "{{ report_path }}"
+        owner: root
+        group: root
+        mode: '0600'
+      when: generate_report | bool
+      tags:
+        - report
+
+  post_tasks:
+    - name: Display SCAP assessment instructions
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "For detailed SCAP compliance assessment:"
+          - "=========================================="
+          - ""
+          - "Install SCAP Security Guide:"
+          - "  dnf install scap-security-guide openscap-scanner"
+          - ""
+          - "Run STIG assessment:"
+          - "  oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_stig \\"
+          - "    --results /tmp/stig-results.xml \\"
+          - "    --report /tmp/stig-report.html \\"
+          - "    /usr/share/xml/scap/ssg/content/ssg-rhel{{ ansible_distribution_major_version }}-ds.xml"
+          - ""
+          - "Run CIS Benchmark assessment:"
+          - "  oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_cis \\"
+          - "    --results /tmp/cis-results.xml \\"
+          - "    --report /tmp/cis-report.html \\"
+          - "    /usr/share/xml/scap/ssg/content/ssg-rhel{{ ansible_distribution_major_version }}-ds.xml"
+          - ""
+          - "=========================================="
+      tags:
+        - report

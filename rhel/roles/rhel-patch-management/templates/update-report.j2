@@ -1,0 +1,23 @@
+RHEL Patch Management Report
+Generated: {{ ansible_date_time.iso8601 }}
+Hostname: {{ ansible_hostname }}
+RHEL Version: {{ ansible_distribution }} {{ ansible_distribution_version }}
+
+================================
+Update Summary
+================================
+Total updates available: {{ available_updates.results | length }}
+Security updates only: {{ rhel_security_updates_only }}
+Kernel updated: {{ rhel_update_kernel }}
+Auto reboot: {{ rhel_auto_reboot }}
+
+================================
+Reboot Status
+================================
+Reboot required: {{ 'yes' if kernel_check.stdout == 'reboot_required' else 'no' }}
+
+================================
+System Information
+================================
+Current kernel: {{ ansible_kernel }}
+Architecture: {{ ansible_architecture }}

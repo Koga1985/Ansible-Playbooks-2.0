@@ -1,0 +1,54 @@
+---
+# tasks/banner.yml - Login Banner Configuration
+# DoD STIG V-204536 through V-204540
+
+- name: Configure /etc/issue banner (STIG V-204538)
+  ansible.builtin.copy:
+    content: "{{ rhel_banner_text }}"
+    dest: /etc/issue
+    owner: root
+    group: root
+    mode: '0644'
+  when: rhel_configure_issue_banner | bool
+  tags:
+    - banner
+
+- name: Configure /etc/issue.net banner (STIG V-204539)
+  ansible.builtin.copy:
+    content: "{{ rhel_banner_text }}"
+    dest: /etc/issue.net
+    owner: root
+    group: root
+    mode: '0644'
+  when: rhel_configure_issue_net_banner | bool
+  tags:
+    - banner
+
+- name: Configure /etc/motd banner (STIG V-204540)
+  ansible.builtin.copy:
+    content: "{{ rhel_banner_text }}"
+    dest: /etc/motd
+    owner: root
+    group: root
+    mode: '0644'
+  when: rhel_configure_motd_banner | bool
+  tags:
+    - banner
+
+- name: Verify banner configuration
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/issue
+    - /etc/issue.net
+    - /etc/motd
+  register: banner_files
+  tags:
+    - validation
+
+- name: Display banner configuration status
+  ansible.builtin.debug:
+    msg: "Login banners configured successfully"
+  when: banner_files.results | selectattr('stat.exists') | list | length > 0
+  tags:
+    - validation
