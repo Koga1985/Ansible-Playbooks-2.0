@@ -1,0 +1,105 @@
+---
+# Reusable task: Deploy application to Kubernetes
+# This task deploys a containerized application with proper security contexts
+
+- name: Create namespace for application
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ app_namespace }}"
+        labels:
+          app: "{{ app_name }}"
+          pod-security.kubernetes.io/enforce: "{{ app_pod_security_standard | default('restricted') }}"
+
+- name: Create deployment
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ app_name }}"
+        namespace: "{{ app_namespace }}"
+        labels:
+          app: "{{ app_name }}"
+      spec:
+        replicas: "{{ app_replicas | default(3) }}"
+        selector:
+          matchLabels:
+            app: "{{ app_name }}"
+        template:
+          metadata:
+            labels:
+              app: "{{ app_name }}"
+          spec:
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1000
+              fsGroup: 2000
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: "{{ app_name }}"
+                image: "{{ app_image }}"
+                imagePullPolicy: Always
+                ports:
+                  - containerPort: "{{ app_port | default(8080) }}"
+                    name: http
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  runAsNonRoot: true
+                  capabilities:
+                    drop:
+                      - ALL
+                resources:
+                  requests:
+                    cpu: "{{ app_cpu_request | default('100m') }}"
+                    memory: "{{ app_memory_request | default('128Mi') }}"
+                  limits:
+                    cpu: "{{ app_cpu_limit | default('500m') }}"
+                    memory: "{{ app_memory_limit | default('512Mi') }}"
+                livenessProbe:
+                  httpGet:
+                    path: "{{ app_health_path | default('/health') }}"
+                    port: http
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                readinessProbe:
+                  httpGet:
+                    path: "{{ app_ready_path | default('/ready') }}"
+                    port: http
+                  initialDelaySeconds: 5
+                  periodSeconds: 5
+            imagePullSecrets:
+              - name: "{{ app_image_pull_secret | default('registry-credentials') }}"
+
+- name: Create service
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ app_name }}"
+        namespace: "{{ app_namespace }}"
+      spec:
+        selector:
+          app: "{{ app_name }}"
+        ports:
+          - protocol: TCP
+            port: 80
+            targetPort: http
+        type: "{{ app_service_type | default('ClusterIP') }}"
+
+- name: Display deployment info
+  ansible.builtin.debug:
+    msg:
+      - "Application deployed successfully"
+      - "Name: {{ app_name }}"
+      - "Namespace: {{ app_namespace }}"
+      - "Replicas: {{ app_replicas | default(3) }}"
+      - "Image: {{ app_image }}"

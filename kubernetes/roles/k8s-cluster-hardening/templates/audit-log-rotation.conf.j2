@@ -1,0 +1,15 @@
+# Kubernetes Audit Log Rotation
+# STIG V-242382
+
+{{ k8s_api_server_audit_log_path }} {
+    daily
+    rotate {{ k8s_api_server_audit_log_maxbackup }}
+    maxage {{ k8s_api_server_audit_log_maxage }}
+    size {{ k8s_api_server_audit_log_maxsize }}M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    create 0600 root root
+}

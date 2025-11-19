@@ -1,0 +1,106 @@
+---
+# Kubelet Configuration
+# STIG V-242424 through V-242433
+
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+
+# Authentication and Authorization (STIG V-242424, V-242428)
+authentication:
+  anonymous:
+    enabled: {{ k8s_kubelet_anonymous_auth | lower }}
+  webhook:
+    enabled: true
+    cacheTTL: 2m0s
+  x509:
+    clientCAFile: /etc/kubernetes/pki/ca.crt
+
+authorization:
+  mode: {{ k8s_kubelet_authorization_mode }}
+  webhook:
+    cacheAuthorizedTTL: 5m0s
+    cacheUnauthorizedTTL: 30s
+
+# TLS Configuration (STIG V-242426)
+tlsCertFile: {{ k8s_kubelet_tls_cert_file }}
+tlsPrivateKeyFile: {{ k8s_kubelet_tls_private_key_file }}
+tlsCipherSuites:
+{% for cipher in k8s_tls_cipher_suites %}
+  - {{ cipher }}
+{% endfor %}
+tlsMinVersion: {{ k8s_tls_min_version }}
+
+# Certificate Rotation
+rotateCertificates: true
+serverTLSBootstrap: true
+
+# Security Settings (STIG V-242425, V-242427)
+readOnlyPort: {{ k8s_kubelet_read_only_port }}
+protectKernelDefaults: {{ k8s_kubelet_protect_kernel_defaults | lower }}
+makeIPTablesUtilChains: {{ k8s_kubelet_make_iptables_util_chains | lower }}
+
+# Event and Streaming Settings
+eventRecordQPS: {{ k8s_kubelet_event_qps }}
+streamingConnectionIdleTimeout: {{ k8s_kubelet_streaming_connection_idle_timeout }}
+
+# Feature Gates
+featureGates:
+  RotateKubeletServerCertificate: true
+  SeccompDefault: true
+
+# Resource Management
+cgroupDriver: systemd
+cgroupsPerQOS: true
+enforceNodeAllocatable:
+  - pods
+
+# Security Context
+allowedUnsafeSysctls: []
+seccompDefault: true
+
+# Logging
+logging:
+  format: json
+  verbosity: 2
+
+# Health Checks
+healthzBindAddress: 127.0.0.1
+healthzPort: 10248
+
+# Metrics
+metricsBindAddress: 127.0.0.1:10250
+
+# Container Runtime
+containerRuntimeEndpoint: unix:///var/run/containerd/containerd.sock
+
+# Node Status
+nodeStatusUpdateFrequency: 10s
+nodeStatusReportFrequency: 5m
+
+# Image Pull
+imageMinimumGCAge: 2m
+imageGCHighThresholdPercent: 85
+imageGCLowThresholdPercent: 80
+
+# Pod Settings
+podPidsLimit: 4096
+maxPods: 110
+
+# Eviction
+evictionHard:
+  memory.available: "200Mi"
+  nodefs.available: "10%"
+  nodefs.inodesFree: "5%"
+  imagefs.available: "15%"
+
+# System Reserved
+systemReserved:
+  cpu: 100m
+  memory: 512Mi
+  ephemeral-storage: 1Gi
+
+# Kube Reserved
+kubeReserved:
+  cpu: 100m
+  memory: 512Mi
+  ephemeral-storage: 1Gi

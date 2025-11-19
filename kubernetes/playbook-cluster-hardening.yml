@@ -1,0 +1,40 @@
+---
+# Kubernetes Cluster Hardening Playbook
+# Applies DoD STIG V1R11 and NIST SP 800-190 security controls
+
+- name: Harden Kubernetes Cluster
+  hosts: k8s_control_plane
+  become: true
+  gather_facts: true
+
+  vars:
+    k8s_pod_security_standard: restricted
+    k8s_enable_encryption_at_rest: true
+    k8s_api_server_audit_log_enabled: true
+    k8s_default_network_policy_enabled: true
+
+  pre_tasks:
+    - name: Display hardening information
+      ansible.builtin.debug:
+        msg:
+          - "Starting Kubernetes cluster hardening"
+          - "Target: {{ inventory_hostname }}"
+          - "Pod Security Standard: {{ k8s_pod_security_standard }}"
+
+  roles:
+    - role: kubernetes/roles/k8s-cluster-hardening
+      tags: ['hardening', 'security']
+
+  post_tasks:
+    - name: Run compliance validation
+      ansible.builtin.include_role:
+        name: kubernetes/roles/k8s-cluster-hardening
+        tasks_from: compliance-validation
+      tags: ['validation', 'never']
+
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg:
+          - "Cluster hardening completed"
+          - "Review compliance report at /tmp/k8s-compliance-report.html"
+          - "Run validation with: ansible-playbook playbook-cluster-hardening.yml --tags validation"

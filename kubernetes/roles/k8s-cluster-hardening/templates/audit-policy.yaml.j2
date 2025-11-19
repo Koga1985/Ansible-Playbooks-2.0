@@ -1,0 +1,111 @@
+---
+# Kubernetes Audit Policy
+# DoD STIG V-242459, V-242460, V-242461
+# NIST SP 800-92 - Computer Security Log Management
+
+apiVersion: audit.k8s.io/v1
+kind: Policy
+rules:
+  # Log pod changes at RequestResponse level (STIG V-242460)
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: ""
+        resources: ["pods", "pods/exec", "pods/portforward", "pods/proxy"]
+      - group: "apps"
+        resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+
+  # Log service and endpoint changes
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: ""
+        resources: ["services", "endpoints"]
+
+  # Log secret and configmap changes (STIG V-242461)
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps"]
+
+  # Log RBAC changes
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: "rbac.authorization.k8s.io"
+        resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+
+  # Log service account changes
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: ""
+        resources: ["serviceaccounts"]
+
+  # Log authentication and authorization failures
+  - level: Metadata
+    omitStages:
+      - "RequestReceived"
+    users: ["system:anonymous"]
+
+  # Log persistent volume claims
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: ""
+        resources: ["persistentvolumeclaims", "persistentvolumes"]
+
+  # Log admission webhook changes
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: "admissionregistration.k8s.io"
+        resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+
+  # Log certificate signing requests
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: "certificates.k8s.io"
+        resources: ["certificatesigningrequests", "certificatesigningrequests/approval"]
+
+  # Log namespace changes
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: ""
+        resources: ["namespaces"]
+
+  # Log resource quota and limit range changes
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: ""
+        resources: ["resourcequotas", "limitranges"]
+
+  # Log network policy changes
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: "networking.k8s.io"
+        resources: ["networkpolicies"]
+
+  # Log all other resources at Metadata level
+  - level: Metadata
+    omitStages:
+      - "RequestReceived"
+    resources:
+      - group: ""
+        resources: ["*"]
+
+  # Don't log read-only URLs
+  - level: None
+    nonResourceURLs:
+      - "/healthz*"
+      - "/version"
+      - "/swagger*"
+
+  # Don't log watch requests
+  - level: None
+    verbs: ["watch"]

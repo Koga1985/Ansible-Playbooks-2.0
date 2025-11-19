@@ -1,0 +1,24 @@
+---
+# Encryption at Rest Configuration
+# STIG V-242462, V-242463
+
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+  - resources:
+      - secrets
+    providers:
+      - aescbc:
+          keys:
+            - name: key1
+              secret: {{ encryption_key.stdout | default(lookup('password', '/tmp/k8s-encryption-key chars=ascii_letters,digits length=32') | b64encode) }}
+      - identity: {}
+
+  - resources:
+      - configmaps
+    providers:
+      - aescbc:
+          keys:
+            - name: key1
+              secret: {{ encryption_key.stdout | default(lookup('password', '/tmp/k8s-encryption-key chars=ascii_letters,digits length=32') | b64encode) }}
+      - identity: {}

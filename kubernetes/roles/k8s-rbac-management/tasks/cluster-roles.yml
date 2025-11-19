@@ -1,0 +1,27 @@
+---
+# Cluster Role Creation
+
+- name: Create cluster roles
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: "{{ item.name }}"
+        labels:
+          managed-by: ansible
+          role-type: cluster
+      rules: "{{ item.rules }}"
+  loop: "{{ k8s_cluster_roles }}"
+
+- name: Verify cluster roles created
+  ansible.builtin.command: >
+    kubectl get clusterroles {{ item.name }}
+  loop: "{{ k8s_cluster_roles }}"
+  register: cluster_roles_verify
+  changed_when: false
+
+- name: Display created cluster roles
+  ansible.builtin.debug:
+    msg: "Created {{ k8s_cluster_roles | length }} cluster roles"

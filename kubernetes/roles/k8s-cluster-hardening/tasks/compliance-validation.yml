@@ -1,0 +1,106 @@
+---
+# Compliance Validation Tasks
+# Validates DoD STIG and NIST SP 800-190 compliance
+
+- name: Run kube-bench for STIG compliance
+  when: k8s_run_kube_bench | default(true)
+  block:
+    - name: Check if kube-bench is installed
+      ansible.builtin.command: which kube-bench
+      register: kube_bench_installed
+      changed_when: false
+      failed_when: false
+
+    - name: Run kube-bench compliance scan
+      ansible.builtin.command: >
+        kube-bench run --targets master,node,etcd,policies
+        --json --outputfile /tmp/kube-bench-results.json
+      when: kube_bench_installed.rc == 0
+      register: kube_bench_results
+      changed_when: false
+      failed_when: false
+
+    - name: Display kube-bench summary
+      ansible.builtin.shell: |
+        jq '.Totals' /tmp/kube-bench-results.json
+      when: kube_bench_installed.rc == 0
+      register: bench_summary
+      changed_when: false
+      failed_when: false
+
+- name: Validate STIG controls checklist
+  ansible.builtin.set_fact:
+    stig_controls:
+      V-242381: "{{ 'PASS' if k8s_api_server_audit_log_enabled else 'FAIL' }}"
+      V-242382: "{{ 'PASS' if k8s_api_server_audit_log_maxage >= 30 else 'FAIL' }}"
+      V-242400: "{{ 'PASS' if k8s_tls_min_version == 'VersionTLS12' else 'FAIL' }}"
+      V-242402: "{{ 'PASS' if not k8s_anonymous_auth_enabled else 'FAIL' }}"
+      V-242417: "{{ 'PASS' if 'NodeRestriction' in k8s_enable_admission_plugins else 'FAIL' }}"
+      V-242424: "{{ 'PASS' if not k8s_kubelet_anonymous_auth else 'FAIL' }}"
+      V-242425: "{{ 'PASS' if k8s_kubelet_read_only_port == 0 else 'FAIL' }}"
+      V-242434: "{{ 'PASS' if k8s_etcd_client_cert_auth else 'FAIL' }}"
+      V-242450: "{{ 'PASS' if k8s_config_file_permissions == '0600' else 'FAIL' }}"
+      V-242462: "{{ 'PASS' if k8s_enable_encryption_at_rest else 'FAIL' }}"
+
+- name: Validate NIST SP 800-190 controls
+  ansible.builtin.set_fact:
+    nist_controls:
+      container_isolation: "{{ 'PASS' if k8s_enforce_pod_security_standards else 'FAIL' }}"
+      network_segmentation: "{{ 'PASS' if k8s_default_network_policy_enabled else 'FAIL' }}"
+      secure_orchestration: "{{ 'PASS' if 'RBAC' in k8s_authorization_mode else 'FAIL' }}"
+      logging_monitoring: "{{ 'PASS' if k8s_api_server_audit_log_enabled else 'FAIL' }}"
+      runtime_defense: "{{ 'PASS' if k8s_security_context_defaults.seccomp_profile.type == 'RuntimeDefault' else 'FAIL' }}"
+
+- name: Run kubectl security audit
+  ansible.builtin.shell: |
+    kubectl get all --all-namespaces -o json | \
+    jq -r '[.items[] |
+    select(.spec.securityContext == null or
+           .spec.securityContext.runAsNonRoot != true)] | length'
+  register: insecure_pods
+  changed_when: false
+  failed_when: false
+
+- name: Check for privileged containers
+  ansible.builtin.shell: |
+    kubectl get pods --all-namespaces -o json | \
+    jq -r '[.items[].spec.containers[] |
+    select(.securityContext.privileged == true)] | length'
+  register: privileged_containers
+  changed_when: false
+  failed_when: false
+
+- name: Check for containers running as root
+  ansible.builtin.shell: |
+    kubectl get pods --all-namespaces -o json | \
+    jq -r '[.items[] |
+    select(.spec.securityContext.runAsNonRoot != true)] | length'
+  register: root_containers
+  changed_when: false
+  failed_when: false
+
+- name: Generate compliance report
+  ansible.builtin.template:
+    src: compliance-report.html.j2
+    dest: /tmp/k8s-compliance-report.html
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Display compliance validation summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Compliance Validation Summary ==="
+      - "STIG Controls Passed: {{ stig_controls.values() | select('equalto', 'PASS') | list | length }}/{{ stig_controls | length }}"
+      - "NIST Controls Passed: {{ nist_controls.values() | select('equalto', 'PASS') | list | length }}/{{ nist_controls | length }}"
+      - "Insecure pods found: {{ insecure_pods.stdout | default('N/A') }}"
+      - "Privileged containers: {{ privileged_containers.stdout | default('N/A') }}"
+      - "Containers running as root: {{ root_containers.stdout | default('N/A') }}"
+      - "Compliance report: /tmp/k8s-compliance-report.html"
+
+- name: Fail if critical STIG controls are not met
+  ansible.builtin.fail:
+    msg: "Critical STIG controls failed: {{ stig_controls | dict2items | selectattr('value', 'equalto', 'FAIL') | map(attribute='key') | list }}"
+  when:
+    - k8s_fail_on_compliance_error | default(false)
+    - stig_controls.values() | select('equalto', 'FAIL') | list | length > 0

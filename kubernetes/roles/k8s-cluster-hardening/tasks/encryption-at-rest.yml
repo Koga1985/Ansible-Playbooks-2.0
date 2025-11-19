@@ -1,0 +1,125 @@
+---
+# Encryption at Rest Configuration
+# STIG V-242462, V-242463 and NIST SP 800-190
+
+- name: Generate encryption key if not exists
+  ansible.builtin.shell: |
+    head -c 32 /dev/urandom | base64
+  register: encryption_key
+  changed_when: false
+  no_log: true
+
+- name: Deploy encryption configuration
+  ansible.builtin.template:
+    src: encryption-config.yaml.j2
+    dest: "{{ k8s_encryption_provider_config }}"
+    owner: root
+    group: root
+    mode: '0600'
+    backup: true
+  notify: restart kube-apiserver
+
+- name: Verify encryption config file permissions (STIG V-242462)
+  ansible.builtin.file:
+    path: "{{ k8s_encryption_provider_config }}"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Check if API server is configured with encryption
+  ansible.builtin.shell: |
+    grep -q "encryption-provider-config" /etc/kubernetes/manifests/kube-apiserver.yaml
+  register: encryption_enabled
+  changed_when: false
+  failed_when: false
+
+- name: Add encryption provider config to API server
+  when: encryption_enabled.rc != 0
+  block:
+    - name: Backup API server manifest
+      ansible.builtin.copy:
+        src: /etc/kubernetes/manifests/kube-apiserver.yaml
+        dest: /etc/kubernetes/manifests/kube-apiserver.yaml.backup
+        owner: root
+        group: root
+        mode: '0600'
+        remote_src: true
+
+    - name: Update API server manifest with encryption config
+      ansible.builtin.replace:
+        path: /etc/kubernetes/manifests/kube-apiserver.yaml
+        regexp: '(- kube-apiserver)'
+        replace: |
+          \1
+              - --encryption-provider-config={{ k8s_encryption_provider_config }}
+      notify: restart kube-apiserver
+
+- name: Wait for API server to be ready
+  ansible.builtin.command: >
+    kubectl get --raw /healthz
+  register: api_health
+  retries: 30
+  delay: 10
+  until: api_health.rc == 0
+  changed_when: false
+
+- name: Test encryption by creating a secret
+  ansible.builtin.shell: |
+    kubectl create secret generic encryption-test \
+      --from-literal=key=testvalue \
+      -n kube-system \
+      --dry-run=client -o yaml | kubectl apply -f -
+  register: test_secret
+  changed_when: false
+  failed_when: false
+
+- name: Verify secret is encrypted in etcd
+  ansible.builtin.shell: |
+    ETCDCTL_API=3 etcdctl \
+      --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+      --cert=/etc/kubernetes/pki/etcd/server.crt \
+      --key=/etc/kubernetes/pki/etcd/server.key \
+      get /registry/secrets/kube-system/encryption-test | hexdump -C | grep -q "k8s:enc:aescbc"
+  register: etcd_encryption_check
+  changed_when: false
+  failed_when: false
+  when: etcd_manifest.stat.exists | default(false)
+
+- name: Clean up test secret
+  ansible.builtin.command: >
+    kubectl delete secret encryption-test -n kube-system
+  changed_when: false
+  failed_when: false
+
+- name: Rotate encryption keys (if requested)
+  when: k8s_rotate_encryption_keys | default(false)
+  block:
+    - name: Generate new encryption key
+      ansible.builtin.shell: |
+        head -c 32 /dev/urandom | base64
+      register: new_encryption_key
+      changed_when: false
+      no_log: true
+
+    - name: Add new key to encryption config
+      ansible.builtin.template:
+        src: encryption-config-rotated.yaml.j2
+        dest: "{{ k8s_encryption_provider_config }}"
+        owner: root
+        group: root
+        mode: '0600'
+      notify: restart kube-apiserver
+
+    - name: Re-encrypt all secrets with new key
+      ansible.builtin.shell: |
+        kubectl get secrets --all-namespaces -o json | \
+        kubectl replace -f -
+      changed_when: false
+
+- name: Display encryption status
+  ansible.builtin.debug:
+    msg:
+      - "Encryption at rest configured"
+      - "Encryption config: {{ k8s_encryption_provider_config }}"
+      - "Provider: AES-CBC"
+      - "Encryption test: {{ 'Passed' if etcd_encryption_check.rc == 0 else 'Manual verification required' }}"

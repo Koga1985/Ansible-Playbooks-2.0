@@ -1,0 +1,30 @@
+---
+# Handlers for k8s-cluster-hardening role
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart kubelet
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+    enabled: true
+
+- name: restart kube-apiserver
+  ansible.builtin.debug:
+    msg: "API server will restart automatically when manifest is updated"
+
+- name: restart auditd
+  ansible.builtin.systemd:
+    name: auditd
+    state: restarted
+    enabled: true
+  failed_when: false
+
+- name: restart rsyslog
+  ansible.builtin.systemd:
+    name: rsyslog
+    state: restarted
+    enabled: true
+  failed_when: false

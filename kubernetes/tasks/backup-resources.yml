@@ -1,0 +1,80 @@
+---
+# Reusable task: Backup Kubernetes resources
+
+- name: Create backup directory
+  ansible.builtin.file:
+    path: "{{ k8s_backup_dir | default('/var/backups/kubernetes') }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Backup all namespaces
+  ansible.builtin.shell: |
+    kubectl get namespaces -o yaml > {{ k8s_backup_dir }}/namespaces-{{ ansible_date_time.date }}.yaml
+  changed_when: true
+
+- name: Backup all deployments
+  ansible.builtin.shell: |
+    kubectl get deployments --all-namespaces -o yaml > {{ k8s_backup_dir }}/deployments-{{ ansible_date_time.date }}.yaml
+  changed_when: true
+
+- name: Backup all services
+  ansible.builtin.shell: |
+    kubectl get services --all-namespaces -o yaml > {{ k8s_backup_dir }}/services-{{ ansible_date_time.date }}.yaml
+  changed_when: true
+
+- name: Backup all configmaps
+  ansible.builtin.shell: |
+    kubectl get configmaps --all-namespaces -o yaml > {{ k8s_backup_dir }}/configmaps-{{ ansible_date_time.date }}.yaml
+  changed_when: true
+
+- name: Backup all secrets (encrypted)
+  ansible.builtin.shell: |
+    kubectl get secrets --all-namespaces -o yaml > {{ k8s_backup_dir }}/secrets-{{ ansible_date_time.date }}.yaml
+    chmod 600 {{ k8s_backup_dir }}/secrets-{{ ansible_date_time.date }}.yaml
+  changed_when: true
+  no_log: true
+
+- name: Backup all PVCs
+  ansible.builtin.shell: |
+    kubectl get pvc --all-namespaces -o yaml > {{ k8s_backup_dir }}/pvcs-{{ ansible_date_time.date }}.yaml
+  changed_when: true
+
+- name: Backup all network policies
+  ansible.builtin.shell: |
+    kubectl get networkpolicies --all-namespaces -o yaml > {{ k8s_backup_dir }}/networkpolicies-{{ ansible_date_time.date }}.yaml
+  changed_when: true
+
+- name: Backup RBAC resources
+  ansible.builtin.shell: |
+    kubectl get roles,rolebindings,clusterroles,clusterrolebindings --all-namespaces -o yaml > \
+    {{ k8s_backup_dir }}/rbac-{{ ansible_date_time.date }}.yaml
+  changed_when: true
+
+- name: Create backup archive
+  ansible.builtin.archive:
+    path: "{{ k8s_backup_dir }}/*-{{ ansible_date_time.date }}.yaml"
+    dest: "{{ k8s_backup_dir }}/k8s-backup-{{ ansible_date_time.date }}.tar.gz"
+    format: gz
+    remove: false
+
+- name: Remove old backups
+  ansible.builtin.find:
+    paths: "{{ k8s_backup_dir }}"
+    patterns: "k8s-backup-*.tar.gz"
+    age: "{{ k8s_backup_retention_days | default(30) }}d"
+  register: old_backups
+
+- name: Delete old backups
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ old_backups.files }}"
+
+- name: Display backup summary
+  ansible.builtin.debug:
+    msg:
+      - "Backup completed successfully"
+      - "Backup location: {{ k8s_backup_dir }}/k8s-backup-{{ ansible_date_time.date }}.tar.gz"
+      - "Retention period: {{ k8s_backup_retention_days | default(30) }} days"

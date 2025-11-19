@@ -1,0 +1,31 @@
+---
+galaxy_info:
+  role_name: k8s-cluster-hardening
+  author: DevOps Team
+  description: Kubernetes cluster hardening for DoD STIG and NIST compliance
+  company: Enterprise
+  license: MIT
+  min_ansible_version: '2.14'
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: EL
+      versions:
+        - '8'
+        - '9'
+
+  galaxy_tags:
+    - kubernetes
+    - k8s
+    - security
+    - hardening
+    - stig
+    - nist
+    - compliance
+
+dependencies: []
+
+allow_duplicates: false

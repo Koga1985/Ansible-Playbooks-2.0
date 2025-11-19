@@ -1,0 +1,28 @@
+---
+# Namespaced Role Creation
+
+- name: Create namespaced roles
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ item.namespace }}"
+        labels:
+          managed-by: ansible
+          role-type: namespaced
+      rules: "{{ item.rules }}"
+  loop: "{{ k8s_namespaced_roles }}"
+
+- name: Verify namespaced roles created
+  ansible.builtin.command: >
+    kubectl get roles -n {{ item.namespace }} {{ item.name }}
+  loop: "{{ k8s_namespaced_roles }}"
+  register: roles_verify
+  changed_when: false
+
+- name: Display created roles
+  ansible.builtin.debug:
+    msg: "Created {{ k8s_namespaced_roles | length }} namespaced roles"

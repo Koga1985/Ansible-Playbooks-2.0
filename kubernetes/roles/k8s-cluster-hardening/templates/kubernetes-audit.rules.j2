@@ -1,0 +1,28 @@
+# Kubernetes System Audit Rules
+# NIST SP 800-92 - System Logging
+
+# Monitor Kubernetes configuration files
+-w /etc/kubernetes/ -p wa -k kubernetes-config
+
+# Monitor Kubernetes manifests
+-w /etc/kubernetes/manifests/ -p wa -k kubernetes-manifests
+
+# Monitor Kubernetes PKI
+-w /etc/kubernetes/pki/ -p wa -k kubernetes-pki
+
+# Monitor kubelet configuration
+-w /var/lib/kubelet/config.yaml -p wa -k kubelet-config
+
+# Monitor kubelet service
+-w /etc/systemd/system/kubelet.service.d/ -p wa -k kubelet-service
+
+# Monitor etcd data
+-w /var/lib/etcd/ -p wa -k etcd-data
+
+# Monitor container runtime
+-w /var/run/docker.sock -p wa -k docker-runtime
+-w /var/run/containerd/containerd.sock -p wa -k containerd-runtime
+-w /var/run/crio/crio.sock -p wa -k crio-runtime
+
+# Monitor audit logs
+-w {{ k8s_api_server_audit_log_path }} -p wa -k kubernetes-audit-log

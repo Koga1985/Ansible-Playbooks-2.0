@@ -1,0 +1,48 @@
+---
+# Role Binding Management
+
+- name: Create role bindings
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ item.namespace }}"
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: Role
+        name: "{{ item.role }}"
+      subjects: "{{ item.subjects }}"
+  loop: "{{ k8s_role_bindings }}"
+  when: k8s_role_bindings | length > 0
+
+- name: Create cluster role bindings
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: "{{ item.name }}"
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: "{{ item.role }}"
+      subjects: "{{ item.subjects }}"
+  loop: "{{ k8s_cluster_role_bindings }}"
+  when: k8s_cluster_role_bindings | length > 0
+
+- name: Audit for overly permissive bindings
+  ansible.builtin.shell: |
+    kubectl get clusterrolebindings -o json | \
+    jq -r '.items[] | select(.roleRef.name == "cluster-admin") |
+    .metadata.name + " -> " + (.subjects[].name // "N/A")'
+  register: cluster_admin_bindings
+  changed_when: false
+
+- name: Display cluster-admin bindings (review required)
+  ansible.builtin.debug:
+    msg: "{{ cluster_admin_bindings.stdout_lines }}"
+  when: cluster_admin_bindings.stdout_lines | length > 0

@@ -1,0 +1,81 @@
+---
+# Security Context Enforcement
+# NIST SP 800-190 - Container Runtime Security
+
+- name: Create security context admission configuration
+  ansible.builtin.template:
+    src: security-context-admission.yaml.j2
+    dest: /etc/kubernetes/security-context-admission.yaml
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Deploy LimitRange with security defaults
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: LimitRange
+      metadata:
+        name: security-context-defaults
+        namespace: "{{ item }}"
+      spec:
+        limits:
+          - type: Container
+            defaultRequest:
+              cpu: "100m"
+              memory: "128Mi"
+            default:
+              cpu: "200m"
+              memory: "256Mi"
+            max:
+              cpu: "2"
+              memory: "2Gi"
+  loop:
+    - default
+  when: k8s_enable_limit_ranges | bool
+
+- name: Create example secure pod template
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: secure-pod-template
+        namespace: kube-system
+      data:
+        pod-template.yaml: |
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: secure-app
+          spec:
+            securityContext:
+              runAsNonRoot: {{ k8s_security_context_defaults.run_as_non_root }}
+              runAsUser: {{ k8s_security_context_defaults.run_as_user }}
+              fsGroup: {{ k8s_security_context_defaults.fs_group }}
+              seccompProfile:
+                type: {{ k8s_security_context_defaults.seccomp_profile.type }}
+            containers:
+            - name: app
+              image: registry1.dso.mil/ironbank/opensource/nginx/nginx:latest
+              securityContext:
+                allowPrivilegeEscalation: {{ k8s_security_context_defaults.allow_privilege_escalation }}
+                readOnlyRootFilesystem: {{ k8s_security_context_defaults.read_only_root_filesystem }}
+                runAsNonRoot: true
+                capabilities:
+                  drop:
+                  {% for cap in k8s_security_context_defaults.drop_capabilities %}
+                  - {{ cap }}
+                  {% endfor %}
+
+- name: Display security context configuration
+  ansible.builtin.debug:
+    msg:
+      - "Security contexts configured"
+      - "Run as non-root: {{ k8s_security_context_defaults.run_as_non_root }}"
+      - "Default UID: {{ k8s_security_context_defaults.run_as_user }}"
+      - "Privilege escalation: {{ k8s_security_context_defaults.allow_privilege_escalation }}"
+      - "Read-only root FS: {{ k8s_security_context_defaults.read_only_root_filesystem }}"
+      - "Seccomp profile: {{ k8s_security_context_defaults.seccomp_profile.type }}"

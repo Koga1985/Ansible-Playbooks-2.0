@@ -1,0 +1,64 @@
+---
+# Reusable task: Perform rolling update of deployment
+
+- name: Get current deployment image
+  ansible.builtin.shell: |
+    kubectl get deployment {{ deployment_name }} -n {{ deployment_namespace | default('default') }} \
+    -o jsonpath='{.spec.template.spec.containers[0].image}'
+  register: current_image
+  changed_when: false
+
+- name: Update deployment image
+  ansible.builtin.command: >
+    kubectl set image deployment/{{ deployment_name }}
+    {{ container_name | default(deployment_name) }}={{ new_image }}
+    -n {{ deployment_namespace | default('default') }}
+    --record
+  when: current_image.stdout != new_image
+  register: update_result
+
+- name: Wait for rollout to complete
+  ansible.builtin.command: >
+    kubectl rollout status deployment/{{ deployment_name }}
+    -n {{ deployment_namespace | default('default') }}
+    --timeout={{ rollout_timeout | default('10m') }}
+  when: update_result is changed
+  register: rollout_result
+
+- name: Check rollout history
+  ansible.builtin.command: >
+    kubectl rollout history deployment/{{ deployment_name }}
+    -n {{ deployment_namespace | default('default') }}
+  register: rollout_history
+  changed_when: false
+
+- name: Verify deployment health
+  ansible.builtin.shell: |
+    kubectl get deployment {{ deployment_name }} -n {{ deployment_namespace | default('default') }} \
+    -o jsonpath='{.status.conditions[?(@.type=="Available")].status}'
+  register: deployment_available
+  changed_when: false
+
+- name: Rollback if deployment failed
+  when:
+    - update_result is changed
+    - deployment_available.stdout != "True"
+    - auto_rollback | default(false)
+  block:
+    - name: Perform rollback
+      ansible.builtin.command: >
+        kubectl rollout undo deployment/{{ deployment_name }}
+        -n {{ deployment_namespace | default('default') }}
+
+    - name: Fail after rollback
+      ansible.builtin.fail:
+        msg: "Deployment update failed and was rolled back"
+
+- name: Display update result
+  ansible.builtin.debug:
+    msg:
+      - "Rolling update complete"
+      - "Deployment: {{ deployment_name }}"
+      - "Previous image: {{ current_image.stdout }}"
+      - "New image: {{ new_image }}"
+      - "Status: {{ 'Available' if deployment_available.stdout == 'True' else 'Unhealthy' }}"

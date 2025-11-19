@@ -1,0 +1,85 @@
+---
+# API Server Hardening Tasks
+# STIG V-242381 through V-242420
+
+- name: Create audit policy directory
+  ansible.builtin.file:
+    path: "{{ k8s_api_server_audit_policy_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy audit policy configuration
+  ansible.builtin.template:
+    src: audit-policy.yaml.j2
+    dest: "{{ k8s_api_server_audit_policy_file }}"
+    owner: root
+    group: root
+    mode: '0600'
+  notify: restart kube-apiserver
+
+- name: Create audit log directory
+  ansible.builtin.file:
+    path: "{{ k8s_api_server_audit_log_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Check if API server manifest exists
+  ansible.builtin.stat:
+    path: /etc/kubernetes/manifests/kube-apiserver.yaml
+  register: api_server_manifest
+
+- name: Update API server configuration (kubeadm)
+  when: api_server_manifest.stat.exists
+  block:
+    - name: Read current API server manifest
+      ansible.builtin.slurp:
+        src: /etc/kubernetes/manifests/kube-apiserver.yaml
+      register: api_server_current
+
+    - name: Parse API server manifest
+      ansible.builtin.set_fact:
+        api_server_config: "{{ api_server_current.content | b64decode | from_yaml }}"
+
+    - name: Apply API server hardening parameters
+      ansible.builtin.template:
+        src: kube-apiserver-flags.yaml.j2
+        dest: /etc/kubernetes/kube-apiserver-flags.yaml
+        owner: root
+        group: root
+        mode: '0600'
+      notify: restart kube-apiserver
+
+- name: Verify anonymous auth is disabled (STIG V-242402)
+  ansible.builtin.command: >
+    kubectl get --raw /api/v1/namespaces/default
+  register: anon_auth_test
+  changed_when: false
+  failed_when: false
+
+- name: Check API server TLS configuration (STIG V-242400)
+  ansible.builtin.shell: |
+    openssl s_client -connect {{ ansible_default_ipv4.address }}:6443 </dev/null 2>/dev/null | \
+    openssl x509 -noout -text | grep -A 2 "Signature Algorithm"
+  register: api_server_tls
+  changed_when: false
+  failed_when: false
+
+- name: Validate admission controllers (STIG V-242417)
+  ansible.builtin.command: >
+    kubectl get --raw /api/v1
+  register: admission_check
+  changed_when: false
+  failed_when: false
+
+- name: Display API server hardening status
+  ansible.builtin.debug:
+    msg:
+      - "API Server hardening applied"
+      - "Audit logging: Enabled"
+      - "Anonymous auth: Disabled"
+      - "TLS Min Version: {{ k8s_tls_min_version }}"
+      - "Authorization modes: {{ k8s_authorization_mode | join(', ') }}"

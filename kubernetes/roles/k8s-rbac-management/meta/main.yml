@@ -1,0 +1,28 @@
+---
+galaxy_info:
+  role_name: k8s-rbac-management
+  author: DevOps Team
+  description: Kubernetes RBAC management with least privilege principles
+  company: Enterprise
+  license: MIT
+  min_ansible_version: '2.14'
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: EL
+      versions:
+        - '8'
+        - '9'
+
+  galaxy_tags:
+    - kubernetes
+    - rbac
+    - security
+    - authorization
+    - stig
+    - compliance
+
+dependencies: []

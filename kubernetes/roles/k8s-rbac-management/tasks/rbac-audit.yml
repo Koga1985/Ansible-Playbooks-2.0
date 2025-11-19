@@ -1,0 +1,60 @@
+---
+# RBAC Audit and Compliance Checks
+
+- name: Get all role bindings
+  ansible.builtin.command: >
+    kubectl get rolebindings --all-namespaces -o json
+  register: all_rolebindings
+  changed_when: false
+
+- name: Get all cluster role bindings
+  ansible.builtin.command: >
+    kubectl get clusterrolebindings -o json
+  register: all_clusterrolebindings
+  changed_when: false
+
+- name: Find bindings with system:masters group
+  ansible.builtin.shell: |
+    kubectl get clusterrolebindings -o json | \
+    jq -r '.items[] | select(.subjects[]?.name == "system:masters") | .metadata.name'
+  register: system_masters_bindings
+  changed_when: false
+  failed_when: false
+
+- name: Warn about system:masters usage
+  ansible.builtin.debug:
+    msg: "WARNING: Found {{ system_masters_bindings.stdout_lines | length }} bindings using system:masters group"
+  when: system_masters_bindings.stdout_lines | length > 0
+
+- name: Find service accounts with cluster-admin
+  ansible.builtin.shell: |
+    kubectl get clusterrolebindings -o json | \
+    jq -r '.items[] | select(.roleRef.name == "cluster-admin" and .subjects[]?.kind == "ServiceAccount") |
+    .subjects[].namespace + "/" + .subjects[].name'
+  register: sa_cluster_admin
+  changed_when: false
+  failed_when: false
+
+- name: Check for wildcard permissions
+  ansible.builtin.shell: |
+    kubectl get clusterroles -o json | \
+    jq -r '.items[] | select(.rules[]? | .verbs[]? == "*" or .resources[]? == "*") | .metadata.name'
+  register: wildcard_permissions
+  changed_when: false
+
+- name: Generate RBAC audit report
+  ansible.builtin.template:
+    src: rbac-audit-report.j2
+    dest: /tmp/k8s-rbac-audit-report.txt
+    mode: '0600'
+
+- name: Display RBAC audit summary
+  ansible.builtin.debug:
+    msg:
+      - "RBAC Audit Complete"
+      - "Total role bindings: {{ (all_rolebindings.stdout | from_json).items | length }}"
+      - "Total cluster role bindings: {{ (all_clusterrolebindings.stdout | from_json).items | length }}"
+      - "System:masters bindings: {{ system_masters_bindings.stdout_lines | length }}"
+      - "ServiceAccounts with cluster-admin: {{ sa_cluster_admin.stdout_lines | length }}"
+      - "Roles with wildcard permissions: {{ wildcard_permissions.stdout_lines | length }}"
+      - "Full report: /tmp/k8s-rbac-audit-report.txt"

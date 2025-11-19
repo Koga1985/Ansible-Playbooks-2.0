@@ -1,0 +1,129 @@
+---
+# Main tasks for secrets management
+
+- name: Verify encryption at rest is enabled
+  ansible.builtin.stat:
+    path: /etc/kubernetes/encryption-config.yaml
+  register: encryption_config
+  failed_when:
+    - k8s_secrets_encryption_enabled | bool
+    - not encryption_config.stat.exists
+  tags:
+    - validation
+
+- name: Create generic secrets
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ item.namespace | default('default') }}"
+      type: "{{ item.type | default('Opaque') }}"
+      data: "{{ item.data }}"
+  loop: "{{ k8s_secrets }}"
+  when: k8s_secrets | length > 0
+  no_log: true
+  tags:
+    - secrets
+
+- name: Create Docker registry secrets
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ item.namespace | default('default') }}"
+      type: kubernetes.io/dockerconfigjson
+      data:
+        .dockerconfigjson: "{{ lookup('template', 'docker-config.json.j2') | b64encode }}"
+  loop: "{{ k8s_image_pull_secrets }}"
+  when: k8s_image_pull_secrets | length > 0
+  no_log: true
+  tags:
+    - secrets
+    - image-pull
+
+- name: Create TLS secrets
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ item.namespace | default('default') }}"
+      type: kubernetes.io/tls
+      data:
+        tls.crt: "{{ lookup('file', item.cert_path) | b64encode }}"
+        tls.key: "{{ lookup('file', item.key_path) | b64encode }}"
+  loop: "{{ k8s_tls_secrets }}"
+  when: k8s_tls_secrets | length > 0
+  no_log: true
+  tags:
+    - secrets
+    - tls
+
+- name: Scan for exposed secrets in ConfigMaps
+  ansible.builtin.shell: |
+    kubectl get configmaps --all-namespaces -o json | \
+    jq -r '.items[] | select(.data | to_entries[] | .value | test("password|secret|key|token"; "i")) |
+    .metadata.namespace + "/" + .metadata.name'
+  register: exposed_secrets
+  changed_when: false
+  failed_when: false
+  when: k8s_scan_for_exposed_secrets | bool
+  tags:
+    - audit
+
+- name: Warn about potential exposed secrets
+  ansible.builtin.debug:
+    msg: "WARNING: Potential secrets found in ConfigMaps: {{ exposed_secrets.stdout_lines }}"
+  when:
+    - k8s_scan_for_exposed_secrets | bool
+    - exposed_secrets.stdout_lines | length > 0
+  tags:
+    - audit
+
+- name: Create RBAC for secret access restriction
+  when: k8s_restrict_secret_access | bool
+  block:
+    - name: Create role for secret read-only access
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: secret-reader
+            namespace: "{{ item.name }}"
+          rules:
+            - apiGroups: [""]
+              resources: ["secrets"]
+              verbs: ["get", "list"]
+      loop: "{{ k8s_namespaces | default([]) }}"
+  tags:
+    - rbac
+
+- name: Audit secret access
+  ansible.builtin.shell: |
+    kubectl get secrets --all-namespaces -o json | \
+    jq -r '.items | length'
+  register: total_secrets
+  changed_when: false
+  when: k8s_audit_secret_access | bool
+  tags:
+    - audit
+
+- name: Display secrets management summary
+  ansible.builtin.debug:
+    msg:
+      - "Secrets management complete"
+      - "Encryption at rest: {{ 'Enabled' if encryption_config.stat.exists else 'Disabled' }}"
+      - "Total secrets in cluster: {{ total_secrets.stdout | default('N/A') }}"
+      - "Secrets created: {{ k8s_secrets | length }}"
+      - "Image pull secrets: {{ k8s_image_pull_secrets | length }}"
+      - "TLS secrets: {{ k8s_tls_secrets | length }}"

@@ -1,0 +1,72 @@
+---
+# Kubernetes RBAC Management
+# STIG V-242402, V-242403, V-242443, V-242445
+
+# RBAC Configuration
+k8s_rbac_enabled: true
+k8s_create_default_roles: true
+k8s_audit_rbac_changes: true
+
+# Service Accounts
+k8s_create_service_accounts: true
+k8s_automount_sa_token: false
+k8s_sa_token_secret_bound: true
+
+# Predefined Roles
+k8s_admin_users: []
+k8s_developer_users: []
+k8s_viewer_users: []
+
+# Namespaced Roles
+k8s_namespaced_roles:
+  - name: pod-reader
+    namespace: default
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "pods/log"]
+        verbs: ["get", "list", "watch"]
+
+  - name: deployment-manager
+    namespace: default
+    rules:
+      - apiGroups: ["apps"]
+        resources: ["deployments", "replicasets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - name: secret-reader
+    namespace: default
+    rules:
+      - apiGroups: [""]
+        resources: ["secrets"]
+        verbs: ["get", "list"]
+
+# Cluster Roles
+k8s_cluster_roles:
+  - name: cluster-viewer
+    rules:
+      - apiGroups: [""]
+        resources: ["namespaces", "nodes", "persistentvolumes"]
+        verbs: ["get", "list", "watch"]
+
+  - name: namespace-admin
+    rules:
+      - apiGroups: [""]
+        resources: ["*"]
+        verbs: ["*"]
+      - apiGroups: ["apps", "batch", "extensions"]
+        resources: ["*"]
+        verbs: ["*"]
+
+# Role Bindings
+k8s_role_bindings: []
+k8s_cluster_role_bindings: []
+
+# Security Constraints
+k8s_deny_system_masters: true
+k8s_require_rolebinding_subjects: true
+k8s_prevent_privilege_escalation: true
+
+# Audit and Compliance
+k8s_rbac_audit_enabled: true
+k8s_rbac_periodic_review: true
+k8s_rbac_review_interval_days: 90

@@ -1,0 +1,49 @@
+---
+# Reusable task: Scale Kubernetes deployment
+
+- name: Verify deployment exists
+  ansible.builtin.command: >
+    kubectl get deployment {{ deployment_name }} -n {{ deployment_namespace | default('default') }}
+  register: deployment_check
+  changed_when: false
+  failed_when: deployment_check.rc != 0
+
+- name: Get current replica count
+  ansible.builtin.shell: |
+    kubectl get deployment {{ deployment_name }} -n {{ deployment_namespace | default('default') }} \
+    -o jsonpath='{.spec.replicas}'
+  register: current_replicas
+  changed_when: false
+
+- name: Scale deployment
+  ansible.builtin.command: >
+    kubectl scale deployment {{ deployment_name }}
+    -n {{ deployment_namespace | default('default') }}
+    --replicas={{ desired_replicas }}
+  when: current_replicas.stdout|int != desired_replicas|int
+  register: scale_result
+
+- name: Wait for deployment to be ready
+  ansible.builtin.command: >
+    kubectl rollout status deployment/{{ deployment_name }}
+    -n {{ deployment_namespace | default('default') }}
+    --timeout={{ rollout_timeout | default('5m') }}
+  register: rollout_status
+  when: scale_result is changed
+
+- name: Verify scaled replicas
+  ansible.builtin.shell: |
+    kubectl get deployment {{ deployment_name }} -n {{ deployment_namespace | default('default') }} \
+    -o jsonpath='{.status.readyReplicas}'
+  register: ready_replicas
+  changed_when: false
+
+- name: Display scaling result
+  ansible.builtin.debug:
+    msg:
+      - "Deployment scaling complete"
+      - "Deployment: {{ deployment_name }}"
+      - "Namespace: {{ deployment_namespace | default('default') }}"
+      - "Previous replicas: {{ current_replicas.stdout }}"
+      - "Desired replicas: {{ desired_replicas }}"
+      - "Ready replicas: {{ ready_replicas.stdout }}"

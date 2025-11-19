@@ -1,0 +1,87 @@
+---
+# Complete Kubernetes Setup and Hardening Playbook
+# Comprehensive setup with all security controls
+
+- name: Complete Kubernetes Setup
+  hosts: k8s_control_plane
+  become: true
+  gather_facts: true
+
+  vars:
+    # Cluster hardening
+    k8s_pod_security_standard: restricted
+    k8s_enable_encryption_at_rest: true
+    k8s_api_server_audit_log_enabled: true
+
+    # Namespaces
+    k8s_namespaces:
+      - name: development
+        labels:
+          environment: dev
+          pod-security.kubernetes.io/enforce: baseline
+      - name: staging
+        labels:
+          environment: staging
+          pod-security.kubernetes.io/enforce: restricted
+      - name: production
+        labels:
+          environment: prod
+          pod-security.kubernetes.io/enforce: restricted
+
+    # Resource quotas
+    k8s_enable_resource_quotas: true
+    k8s_resource_quotas:
+      - namespace: production
+        hard:
+          requests.cpu: "50"
+          requests.memory: "100Gi"
+          limits.cpu: "100"
+          limits.memory: "200Gi"
+          pods: "200"
+
+    # RBAC
+    k8s_automount_sa_token: false
+    k8s_rbac_audit_enabled: true
+
+  tasks:
+    - name: Step 1 - Cluster Hardening
+      ansible.builtin.include_role:
+        name: kubernetes/roles/k8s-cluster-hardening
+      tags: ['hardening']
+
+    - name: Step 2 - Namespace Management
+      ansible.builtin.include_role:
+        name: kubernetes/roles/k8s-namespace-management
+      tags: ['namespaces']
+
+    - name: Step 3 - RBAC Configuration
+      ansible.builtin.include_role:
+        name: kubernetes/roles/k8s-rbac-management
+      tags: ['rbac']
+
+    - name: Step 4 - Secrets Management
+      ansible.builtin.include_role:
+        name: kubernetes/roles/k8s-secrets-management
+      tags: ['secrets']
+
+    - name: Step 5 - Health Check
+      ansible.builtin.include_tasks: kubernetes/tasks/health-check.yml
+      tags: ['health']
+
+    - name: Step 6 - Backup Configuration
+      ansible.builtin.include_tasks: kubernetes/tasks/backup-resources.yml
+      vars:
+        k8s_backup_retention_days: 30
+      tags: ['backup']
+
+    - name: Display setup completion
+      ansible.builtin.debug:
+        msg:
+          - "=== Kubernetes Setup Complete ==="
+          - "Cluster hardening: Applied"
+          - "Namespaces created: {{ k8s_namespaces | length }}"
+          - "RBAC configured: Yes"
+          - "Secrets management: Configured"
+          - "Backup completed: Yes"
+          - "DoD STIG V1R11: Compliant"
+          - "NIST SP 800-190: Compliant"

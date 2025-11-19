@@ -1,0 +1,51 @@
+---
+# Main tasks file for k8s-rbac-management role
+
+- name: Verify RBAC is enabled
+  ansible.builtin.command: >
+    kubectl api-versions
+  register: api_versions
+  changed_when: false
+  failed_when: "'rbac.authorization.k8s.io' not in api_versions.stdout"
+
+- name: Create service accounts
+  ansible.builtin.include_tasks: service-accounts.yml
+  when: k8s_create_service_accounts | bool
+  tags:
+    - service-accounts
+    - rbac
+
+- name: Create namespaced roles
+  ansible.builtin.include_tasks: namespaced-roles.yml
+  when: k8s_namespaced_roles | length > 0
+  tags:
+    - roles
+    - rbac
+
+- name: Create cluster roles
+  ansible.builtin.include_tasks: cluster-roles.yml
+  when: k8s_cluster_roles | length > 0
+  tags:
+    - cluster-roles
+    - rbac
+
+- name: Create role bindings
+  ansible.builtin.include_tasks: role-bindings.yml
+  tags:
+    - bindings
+    - rbac
+
+- name: Audit RBAC configuration
+  ansible.builtin.include_tasks: rbac-audit.yml
+  when: k8s_rbac_audit_enabled | bool
+  tags:
+    - audit
+    - compliance
+
+- name: Display RBAC summary
+  ansible.builtin.debug:
+    msg:
+      - "RBAC configuration complete"
+      - "Namespaced roles: {{ k8s_namespaced_roles | length }}"
+      - "Cluster roles: {{ k8s_cluster_roles | length }}"
+      - "Service account token automount: {{ k8s_automount_sa_token }}"

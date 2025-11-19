@@ -1,0 +1,80 @@
+---
+# Reusable task: Kubernetes cluster health check
+
+- name: Check cluster info
+  ansible.builtin.command: kubectl cluster-info
+  register: cluster_info
+  changed_when: false
+
+- name: Get node status
+  ansible.builtin.command: kubectl get nodes -o json
+  register: nodes_status
+  changed_when: false
+
+- name: Parse node status
+  ansible.builtin.set_fact:
+    nodes_ready: "{{ (nodes_status.stdout | from_json).items | selectattr('status.conditions', 'defined') | selectattr('status.conditions', 'search', 'Ready.*True') | list | length }}"
+    nodes_total: "{{ (nodes_status.stdout | from_json).items | length }}"
+
+- name: Check component status
+  ansible.builtin.command: kubectl get componentstatuses
+  register: component_status
+  changed_when: false
+  failed_when: false
+
+- name: Check pod status
+  ansible.builtin.shell: |
+    kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded -o json
+  register: unhealthy_pods
+  changed_when: false
+
+- name: Count unhealthy pods
+  ansible.builtin.set_fact:
+    unhealthy_pod_count: "{{ (unhealthy_pods.stdout | from_json).items | length }}"
+
+- name: Check for pending PVCs
+  ansible.builtin.shell: |
+    kubectl get pvc --all-namespaces --field-selector=status.phase=Pending -o json
+  register: pending_pvcs
+  changed_when: false
+
+- name: Check API server health
+  ansible.builtin.command: kubectl get --raw /healthz
+  register: api_health
+  changed_when: false
+  failed_when: false
+
+- name: Check etcd health
+  ansible.builtin.shell: |
+    ETCDCTL_API=3 etcdctl \
+      --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+      --cert=/etc/kubernetes/pki/etcd/server.crt \
+      --key=/etc/kubernetes/pki/etcd/server.key \
+      endpoint health
+  register: etcd_health
+  changed_when: false
+  failed_when: false
+
+- name: Check for certificate expiration
+  ansible.builtin.command: kubeadm certs check-expiration
+  register: cert_expiration
+  changed_when: false
+  failed_when: false
+
+- name: Display health check summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Kubernetes Cluster Health Check ==="
+      - "Cluster: {{ 'Healthy' if cluster_info.rc == 0 else 'Unhealthy' }}"
+      - "Nodes: {{ nodes_ready }}/{{ nodes_total }} ready"
+      - "Unhealthy pods: {{ unhealthy_pod_count }}"
+      - "Pending PVCs: {{ (pending_pvcs.stdout | from_json).items | length }}"
+      - "API server: {{ 'Healthy' if api_health.rc == 0 else 'Unhealthy' }}"
+      - "ETCD: {{ 'Healthy' if etcd_health.rc == 0 else 'Check required' }}"
+
+- name: Fail if cluster is unhealthy
+  ansible.builtin.fail:
+    msg: "Cluster health check failed - please review above output"
+  when:
+    - k8s_fail_on_unhealthy | default(false)
+    - (cluster_info.rc != 0 or nodes_ready|int != nodes_total|int or unhealthy_pod_count|int > 0)

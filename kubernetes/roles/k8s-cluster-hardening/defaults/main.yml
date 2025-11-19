@@ -1,0 +1,144 @@
+---
+# Kubernetes Cluster Hardening - DoD STIG & NIST Compliant
+# Based on Kubernetes STIG V1R11 and NIST SP 800-190
+
+# API Server Configuration (STIG V-242381, V-242382, V-242383)
+k8s_api_server_audit_log_enabled: true
+k8s_api_server_audit_log_path: /var/log/kubernetes/audit.log
+k8s_api_server_audit_log_maxage: 30
+k8s_api_server_audit_log_maxbackup: 10
+k8s_api_server_audit_log_maxsize: 100
+k8s_api_server_audit_policy_file: /etc/kubernetes/audit-policy.yaml
+
+# TLS and Certificate Settings (STIG V-242400, V-242401)
+k8s_tls_min_version: VersionTLS12
+k8s_tls_cipher_suites:
+  - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+  - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+
+# Authentication and Authorization (STIG V-242402, V-242403)
+k8s_anonymous_auth_enabled: false
+k8s_basic_auth_enabled: false
+k8s_token_auth_enabled: false
+k8s_authorization_mode:
+  - Node
+  - RBAC
+
+# Admission Controllers (STIG V-242417, V-242418, V-242419)
+k8s_enable_admission_plugins:
+  - NodeRestriction
+  - PodSecurityPolicy
+  - ServiceAccount
+  - NamespaceLifecycle
+  - LimitRanger
+  - ResourceQuota
+  - DefaultStorageClass
+  - DefaultTolerationSeconds
+  - MutatingAdmissionWebhook
+  - ValidatingAdmissionWebhook
+  - PersistentVolumeClaimResize
+  - Priority
+  - StorageObjectInUseProtection
+  - RuntimeClass
+  - CertificateApproval
+  - CertificateSigning
+  - CertificateSubjectRestriction
+
+k8s_disable_admission_plugins:
+  - AlwaysAdmit
+  - AlwaysPullImages
+
+# Kubelet Security (STIG V-242424, V-242425, V-242426)
+k8s_kubelet_anonymous_auth: false
+k8s_kubelet_authorization_mode: Webhook
+k8s_kubelet_authentication_mode: x509
+k8s_kubelet_read_only_port: 0
+k8s_kubelet_protect_kernel_defaults: true
+k8s_kubelet_make_iptables_util_chains: true
+k8s_kubelet_event_qps: 0
+k8s_kubelet_streaming_connection_idle_timeout: 5m
+k8s_kubelet_tls_cert_file: /var/lib/kubelet/pki/kubelet.crt
+k8s_kubelet_tls_private_key_file: /var/lib/kubelet/pki/kubelet.key
+
+# ETCD Security (STIG V-242434, V-242435)
+k8s_etcd_cert_file: /etc/kubernetes/pki/etcd/server.crt
+k8s_etcd_key_file: /etc/kubernetes/pki/etcd/server.key
+k8s_etcd_client_cert_auth: true
+k8s_etcd_peer_client_cert_auth: true
+k8s_etcd_peer_auto_tls: false
+k8s_etcd_auto_tls: false
+
+# Network Policy (NIST SP 800-190)
+k8s_default_network_policy_enabled: true
+k8s_network_policy_provider: calico  # Options: calico, cilium, weave
+
+# Pod Security Standards (NIST SP 800-190)
+k8s_pod_security_standard: restricted  # Options: privileged, baseline, restricted
+k8s_enforce_pod_security_standards: true
+
+# Resource Limits and Quotas (STIG V-242443)
+k8s_enable_resource_quotas: true
+k8s_enable_limit_ranges: true
+
+# Service Account Security (STIG V-242445)
+k8s_automount_service_account_token: false
+k8s_service_account_lookup: true
+
+# File Permissions (STIG V-242450 through V-242455)
+k8s_config_file_permissions: '0600'
+k8s_config_file_owner: root
+k8s_config_file_group: root
+
+# Logging and Monitoring (NIST SP 800-92)
+k8s_event_ttl: 1h
+k8s_enable_profiling: false
+
+# Security Context Defaults
+k8s_security_context_defaults:
+  run_as_non_root: true
+  run_as_user: 1000
+  fs_group: 2000
+  allow_privilege_escalation: false
+  read_only_root_filesystem: true
+  drop_capabilities:
+    - ALL
+  seccomp_profile:
+    type: RuntimeDefault
+
+# Image Security (STIG V-242408)
+k8s_image_pull_policy: Always
+k8s_require_image_signature: true
+k8s_allowed_registries:
+  - registry1.dso.mil
+  - docker.io
+  - quay.io
+
+# Namespace Isolation
+k8s_enable_namespace_isolation: true
+k8s_protected_namespaces:
+  - kube-system
+  - kube-public
+  - kube-node-lease
+  - default
+
+# API Rate Limiting (DoS Protection)
+k8s_enable_api_rate_limiting: true
+k8s_max_requests_inflight: 400
+k8s_max_mutating_requests_inflight: 200
+
+# Encryption at Rest (STIG V-242462)
+k8s_encryption_provider_config: /etc/kubernetes/encryption-config.yaml
+k8s_enable_encryption_at_rest: true
+
+# Service Mesh Integration
+k8s_service_mesh_enabled: false
+k8s_service_mesh_type: istio  # Options: istio, linkerd, consul
+
+# Backup and DR
+k8s_backup_enabled: true
+k8s_backup_schedule: "0 2 * * *"
+k8s_backup_retention_days: 30

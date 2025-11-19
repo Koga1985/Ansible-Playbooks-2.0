@@ -1,0 +1,111 @@
+---
+# Kubelet Hardening Tasks
+# STIG V-242424 through V-242433
+
+- name: Create kubelet configuration directory
+  ansible.builtin.file:
+    path: /var/lib/kubelet
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy hardened kubelet configuration
+  ansible.builtin.template:
+    src: kubelet-config.yaml.j2
+    dest: /var/lib/kubelet/config.yaml
+    owner: root
+    group: root
+    mode: '0600'
+  notify: restart kubelet
+
+- name: Ensure kubelet service drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/kubelet.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Apply kubelet security settings via drop-in
+  ansible.builtin.template:
+    src: 10-kubelet-hardening.conf.j2
+    dest: /etc/systemd/system/kubelet.service.d/10-kubelet-hardening.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart kubelet
+
+- name: Disable kubelet read-only port (STIG V-242425)
+  ansible.builtin.lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^readOnlyPort:'
+    line: 'readOnlyPort: 0'
+    create: false
+  notify: restart kubelet
+
+- name: Enable kubelet certificate rotation
+  ansible.builtin.lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^rotateCertificates:'
+    line: 'rotateCertificates: true'
+    create: false
+  notify: restart kubelet
+
+- name: Set kubelet TLS cipher suites (STIG V-242426)
+  ansible.builtin.blockinfile:
+    path: /var/lib/kubelet/config.yaml
+    marker: "# {mark} ANSIBLE MANAGED - TLS Configuration"
+    block: |
+      tlsCipherSuites:
+      {% for cipher in k8s_tls_cipher_suites %}
+        - {{ cipher }}
+      {% endfor %}
+    create: false
+  notify: restart kubelet
+
+- name: Verify kubelet is using webhook authorization (STIG V-242428)
+  ansible.builtin.command: >
+    grep -q "authorization-mode=Webhook" /var/lib/kubelet/config.yaml ||
+    grep -q "mode: Webhook" /var/lib/kubelet/config.yaml
+  register: kubelet_webhook_auth
+  changed_when: false
+  failed_when: false
+
+- name: Set file permissions on kubelet config (STIG V-242451)
+  ansible.builtin.file:
+    path: /var/lib/kubelet/config.yaml
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Set file permissions on kubelet service file (STIG V-242452)
+  ansible.builtin.file:
+    path: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+    owner: root
+    group: root
+    mode: '0644'
+  failed_when: false
+
+- name: Ensure kubelet certificate files have correct permissions
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: '0600'
+  loop:
+    - "{{ k8s_kubelet_tls_cert_file }}"
+    - "{{ k8s_kubelet_tls_private_key_file }}"
+  when: item is exists
+  failed_when: false
+
+- name: Display kubelet hardening status
+  ansible.builtin.debug:
+    msg:
+      - "Kubelet hardening applied"
+      - "Anonymous auth: {{ 'Disabled' if not k8s_kubelet_anonymous_auth else 'Enabled' }}"
+      - "Authorization mode: {{ k8s_kubelet_authorization_mode }}"
+      - "Read-only port: {{ k8s_kubelet_read_only_port }}"
+      - "Protect kernel defaults: {{ 'Enabled' if k8s_kubelet_protect_kernel_defaults else 'Disabled' }}"

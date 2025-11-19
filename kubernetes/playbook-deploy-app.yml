@@ -1,0 +1,54 @@
+---
+# Secure Application Deployment Playbook
+# Deploys applications with STIG-compliant security contexts
+
+- name: Deploy Secure Application to Kubernetes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    # Application configuration
+    app_name: secure-webapp
+    app_namespace: production
+    app_image: registry1.dso.mil/ironbank/opensource/nginx/nginx:1.23
+    app_replicas: 3
+    app_port: 8080
+
+    # Resource limits
+    app_cpu_request: "200m"
+    app_memory_request: "256Mi"
+    app_cpu_limit: "1000m"
+    app_memory_limit: "1Gi"
+
+    # Security
+    app_pod_security_standard: restricted
+
+  tasks:
+    - name: Include namespace management role
+      ansible.builtin.include_role:
+        name: kubernetes/roles/k8s-namespace-management
+      vars:
+        k8s_namespaces:
+          - name: "{{ app_namespace }}"
+            labels:
+              environment: production
+              pod-security.kubernetes.io/enforce: "{{ app_pod_security_standard }}"
+
+    - name: Deploy application
+      ansible.builtin.include_tasks: kubernetes/tasks/deploy-application.yml
+
+    - name: Verify deployment
+      ansible.builtin.command: >
+        kubectl rollout status deployment/{{ app_name }} -n {{ app_namespace }}
+      register: rollout_status
+      changed_when: false
+
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg:
+          - "Application deployed successfully"
+          - "Name: {{ app_name }}"
+          - "Namespace: {{ app_namespace }}"
+          - "Replicas: {{ app_replicas }}"
+          - "Status: {{ rollout_status.stdout }}"

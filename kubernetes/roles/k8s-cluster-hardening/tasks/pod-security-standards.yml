@@ -1,0 +1,134 @@
+---
+# Pod Security Standards (PSS) Configuration
+# Replaces deprecated Pod Security Policies
+# NIST SP 800-190 Container Security
+
+- name: Check Kubernetes version for PSS support
+  ansible.builtin.assert:
+    that:
+      - k8s_server_version is version('v1.23', '>=')
+    fail_msg: "Pod Security Standards require Kubernetes 1.23 or higher"
+    success_msg: "Kubernetes version supports Pod Security Standards"
+
+- name: Apply Pod Security Standards labels to namespaces
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ item.name }}"
+        labels:
+          pod-security.kubernetes.io/enforce: "{{ item.enforce | default(k8s_pod_security_standard) }}"
+          pod-security.kubernetes.io/audit: "{{ item.audit | default(k8s_pod_security_standard) }}"
+          pod-security.kubernetes.io/warn: "{{ item.warn | default(k8s_pod_security_standard) }}"
+  loop:
+    - { name: 'default', enforce: 'restricted' }
+    - { name: 'kube-system', enforce: 'privileged' }
+    - { name: 'kube-public', enforce: 'restricted' }
+    - { name: 'kube-node-lease', enforce: 'restricted' }
+  when: k8s_enforce_pod_security_standards | bool
+
+- name: Create restricted Pod Security Standard policy
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: pod-security-standards-restricted
+        namespace: kube-system
+      data:
+        description: |
+          Restricted Pod Security Standard
+          - No privilege escalation
+          - Non-root containers
+          - Seccomp, AppArmor, SELinux enforced
+          - Capabilities dropped
+          - Host namespaces denied
+
+- name: Deploy Pod Security admission configuration
+  ansible.builtin.template:
+    src: pod-security-admission-config.yaml.j2
+    dest: /etc/kubernetes/pod-security-admission-config.yaml
+    owner: root
+    group: root
+    mode: '0600'
+  notify: restart kube-apiserver
+
+- name: Create baseline security context constraints
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: baseline-security-context
+        namespace: kube-system
+      data:
+        securityContext: |
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ k8s_security_context_defaults.run_as_user }}
+            fsGroup: {{ k8s_security_context_defaults.fs_group }}
+            seccompProfile:
+              type: {{ k8s_security_context_defaults.seccomp_profile.type }}
+            capabilities:
+              drop:
+              {% for cap in k8s_security_context_defaults.drop_capabilities %}
+                - {{ cap }}
+              {% endfor %}
+
+- name: Verify Pod Security Standards are enforced
+  ansible.builtin.shell: |
+    kubectl get ns -o json | \
+    jq -r '.items[] |
+    select(.metadata.labels["pod-security.kubernetes.io/enforce"] != null) |
+    .metadata.name + ": " + .metadata.labels["pod-security.kubernetes.io/enforce"]'
+  register: pss_verification
+  changed_when: false
+
+- name: Test restricted policy with sample pod
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: pss-test-pod
+        namespace: default
+      spec:
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          fsGroup: 2000
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+          - name: test-container
+            image: registry1.dso.mil/ironbank/opensource/nginx/nginx:1.23
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+  register: pss_test
+  failed_when: false
+
+- name: Clean up test pod
+  kubernetes.core.k8s:
+    state: absent
+    kind: Pod
+    name: pss-test-pod
+    namespace: default
+  when: pss_test is succeeded
+
+- name: Display Pod Security Standards status
+  ansible.builtin.debug:
+    msg:
+      - "Pod Security Standards applied"
+      - "Standard level: {{ k8s_pod_security_standard }}"
+      - "Enforcement: {{ 'Enabled' if k8s_enforce_pod_security_standards else 'Disabled' }}"
+      - "Protected namespaces: {{ k8s_protected_namespaces | length }}"
+      - "Test pod deployment: {{ 'Successful' if pss_test is succeeded else 'Failed (expected for restrictive policies)' }}"

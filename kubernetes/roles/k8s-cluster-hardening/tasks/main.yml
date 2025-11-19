@@ -1,0 +1,87 @@
+---
+# Main tasks file for k8s-cluster-hardening role
+# DoD STIG V1R11 and NIST SP 800-190 Compliant
+
+- name: Include pre-flight checks
+  ansible.builtin.include_tasks: preflight.yml
+  tags:
+    - preflight
+    - always
+
+- name: Harden API Server configuration
+  ansible.builtin.include_tasks: api-server-hardening.yml
+  tags:
+    - api-server
+    - hardening
+
+- name: Harden kubelet configuration
+  ansible.builtin.include_tasks: kubelet-hardening.yml
+  tags:
+    - kubelet
+    - hardening
+
+- name: Harden ETCD configuration
+  ansible.builtin.include_tasks: etcd-hardening.yml
+  tags:
+    - etcd
+    - hardening
+
+- name: Configure audit logging
+  ansible.builtin.include_tasks: audit-logging.yml
+  tags:
+    - audit
+    - logging
+    - compliance
+
+- name: Apply file permissions (STIG V-242450+)
+  ansible.builtin.include_tasks: file-permissions.yml
+  tags:
+    - permissions
+    - stig
+
+- name: Configure encryption at rest
+  ansible.builtin.include_tasks: encryption-at-rest.yml
+  when: k8s_enable_encryption_at_rest | bool
+  tags:
+    - encryption
+    - secrets
+
+- name: Deploy Pod Security Standards
+  ansible.builtin.include_tasks: pod-security-standards.yml
+  when: k8s_enforce_pod_security_standards | bool
+  tags:
+    - pod-security
+    - pss
+
+- name: Configure network policies
+  ansible.builtin.include_tasks: network-policies.yml
+  when: k8s_default_network_policy_enabled | bool
+  tags:
+    - network
+    - policies
+
+- name: Apply security contexts
+  ansible.builtin.include_tasks: security-contexts.yml
+  tags:
+    - security-context
+    - hardening
+
+- name: Run compliance validation
+  ansible.builtin.include_tasks: compliance-validation.yml
+  tags:
+    - validation
+    - compliance
+    - never
+
+- name: Display hardening summary
+  ansible.builtin.debug:
+    msg:
+      - "Kubernetes Cluster Hardening Complete"
+      - "DoD STIG V1R11: Applied"
+      - "NIST SP 800-190: Applied"
+      - "TLS Version: {{ k8s_tls_min_version }}"
+      - "Pod Security Standard: {{ k8s_pod_security_standard }}"
+      - "Audit Logging: {{ 'Enabled' if k8s_api_server_audit_log_enabled else 'Disabled' }}"
+      - "Encryption at Rest: {{ 'Enabled' if k8s_enable_encryption_at_rest else 'Disabled' }}"
+  tags:
+    - always

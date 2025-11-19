@@ -1,0 +1,94 @@
+---
+# ETCD Hardening Tasks
+# STIG V-242434 through V-242437
+
+- name: Check if etcd is running on this node
+  ansible.builtin.stat:
+    path: /etc/kubernetes/manifests/etcd.yaml
+  register: etcd_manifest
+
+- name: ETCD hardening tasks
+  when: etcd_manifest.stat.exists
+  block:
+    - name: Ensure etcd data directory exists with correct permissions
+      ansible.builtin.file:
+        path: /var/lib/etcd
+        state: directory
+        owner: etcd
+        group: etcd
+        mode: '0700'
+      failed_when: false
+
+    - name: Set file permissions on etcd configuration (STIG V-242453)
+      ansible.builtin.file:
+        path: /etc/kubernetes/manifests/etcd.yaml
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Set file permissions on etcd certificates (STIG V-242434)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - "{{ k8s_etcd_cert_file }}"
+        - "{{ k8s_etcd_key_file }}"
+        - /etc/kubernetes/pki/etcd/ca.crt
+        - /etc/kubernetes/pki/etcd/ca.key
+      when: item is exists
+      failed_when: false
+
+    - name: Read current etcd manifest
+      ansible.builtin.slurp:
+        src: /etc/kubernetes/manifests/etcd.yaml
+      register: etcd_current
+
+    - name: Parse etcd manifest
+      ansible.builtin.set_fact:
+        etcd_config: "{{ etcd_current.content | b64decode | from_yaml }}"
+
+    - name: Verify etcd client cert auth is enabled (STIG V-242435)
+      ansible.builtin.assert:
+        that:
+          - "'--client-cert-auth=true' in etcd_config.spec.containers[0].command | default([])"
+        fail_msg: "ETCD client certificate authentication must be enabled"
+        success_msg: "ETCD client cert auth is properly configured"
+      failed_when: false
+
+    - name: Verify etcd peer client cert auth is enabled (STIG V-242436)
+      ansible.builtin.assert:
+        that:
+          - "'--peer-client-cert-auth=true' in etcd_config.spec.containers[0].command | default([])"
+        fail_msg: "ETCD peer client certificate authentication must be enabled"
+        success_msg: "ETCD peer client cert auth is properly configured"
+      failed_when: false
+
+    - name: Verify etcd auto-tls is disabled (STIG V-242437)
+      ansible.builtin.shell: |
+        grep -q "auto-tls=false" /etc/kubernetes/manifests/etcd.yaml && \
+        grep -q "peer-auto-tls=false" /etc/kubernetes/manifests/etcd.yaml
+      register: etcd_autotls
+      changed_when: false
+      failed_when: false
+
+    - name: Check etcd encryption
+      ansible.builtin.command: >
+        kubectl get secrets --all-namespaces -o json
+      register: etcd_secrets
+      changed_when: false
+      failed_when: false
+
+    - name: Display etcd hardening status
+      ansible.builtin.debug:
+        msg:
+          - "ETCD hardening applied"
+          - "Client cert auth: {{ 'Enabled' if k8s_etcd_client_cert_auth else 'Disabled' }}"
+          - "Peer cert auth: {{ 'Enabled' if k8s_etcd_peer_client_cert_auth else 'Disabled' }}"
+          - "Auto TLS: {{ 'Disabled' if not k8s_etcd_auto_tls else 'Enabled' }}"
+
+- name: Display etcd not found message
+  ansible.builtin.debug:
+    msg: "ETCD manifest not found on this node - skipping ETCD hardening"
+  when: not etcd_manifest.stat.exists

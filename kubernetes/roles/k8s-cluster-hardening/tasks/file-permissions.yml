@@ -1,0 +1,109 @@
+---
+# File Permissions Hardening
+# STIG V-242450 through V-242458
+
+- name: Set permissions on Kubernetes configuration files (STIG V-242450)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ k8s_config_file_owner }}"
+    group: "{{ k8s_config_file_group }}"
+    mode: "{{ k8s_config_file_permissions }}"
+  loop:
+    - /etc/kubernetes/admin.conf
+    - /etc/kubernetes/controller-manager.conf
+    - /etc/kubernetes/scheduler.conf
+    - /etc/kubernetes/kubelet.conf
+  when: item is exists
+  failed_when: false
+
+- name: Set permissions on PKI directory (STIG V-242454)
+  ansible.builtin.file:
+    path: /etc/kubernetes/pki
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+    recurse: false
+
+- name: Set permissions on PKI certificate files (STIG V-242455)
+  ansible.builtin.shell: |
+    find /etc/kubernetes/pki -name "*.crt" -exec chmod 644 {} \;
+    find /etc/kubernetes/pki -name "*.key" -exec chmod 600 {} \;
+  changed_when: false
+
+- name: Set ownership on PKI files
+  ansible.builtin.shell: |
+    chown -R root:root /etc/kubernetes/pki
+  changed_when: false
+
+- name: Set permissions on manifest directory (STIG V-242456)
+  ansible.builtin.file:
+    path: /etc/kubernetes/manifests
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Set permissions on manifest files (STIG V-242457)
+  ansible.builtin.shell: |
+    find /etc/kubernetes/manifests -type f -exec chmod 600 {} \;
+  changed_when: false
+
+- name: Set permissions on kubelet config and service files (STIG V-242451, V-242452)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: '/var/lib/kubelet/config.yaml', mode: '0600' }
+    - { path: '/var/lib/kubelet/kubeconfig', mode: '0600' }
+    - { path: '/etc/systemd/system/kubelet.service', mode: '0644' }
+    - { path: '/etc/systemd/system/kubelet.service.d', mode: '0755' }
+  when: item.path is exists
+  failed_when: false
+
+- name: Set permissions on etcd data directory (STIG V-242453)
+  ansible.builtin.file:
+    path: /var/lib/etcd
+    state: directory
+    owner: etcd
+    group: etcd
+    mode: '0700'
+  when: etcd_manifest.stat.exists | default(false)
+  failed_when: false
+
+- name: Set permissions on container runtime socket (STIG V-242458)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: '0660'
+  loop:
+    - /var/run/docker.sock
+    - /var/run/containerd/containerd.sock
+    - /var/run/crio/crio.sock
+  when: item is exists
+  failed_when: false
+
+- name: Verify all critical file permissions
+  ansible.builtin.shell: |
+    ls -la {{ item }}
+  loop:
+    - /etc/kubernetes/admin.conf
+    - /etc/kubernetes/pki
+    - /etc/kubernetes/manifests
+    - /var/lib/kubelet/config.yaml
+  register: file_permissions_check
+  changed_when: false
+  failed_when: false
+
+- name: Display file permissions status
+  ansible.builtin.debug:
+    msg:
+      - "File permissions hardening applied"
+      - "Kubernetes config files: 0600"
+      - "PKI directory: 0700"
+      - "Certificate files: 0644"
+      - "Private key files: 0600"
+      - "Manifest files: 0600"

@@ -1,0 +1,56 @@
+---
+# Pre-flight checks for Kubernetes cluster hardening
+
+- name: Verify Ansible version
+  ansible.builtin.assert:
+    that:
+      - ansible_version.full is version('2.14', '>=')
+    fail_msg: "Ansible version must be 2.14 or higher"
+    success_msg: "Ansible version check passed"
+
+- name: Check if kubectl is installed
+  ansible.builtin.command: kubectl version --client --short
+  register: kubectl_version
+  changed_when: false
+  failed_when: false
+
+- name: Fail if kubectl is not installed
+  ansible.builtin.fail:
+    msg: "kubectl is not installed or not in PATH"
+  when: kubectl_version.rc != 0
+
+- name: Check Kubernetes cluster connectivity
+  ansible.builtin.command: kubectl cluster-info
+  register: cluster_info
+  changed_when: false
+  failed_when: cluster_info.rc != 0
+
+- name: Get Kubernetes version
+  ansible.builtin.command: kubectl version --short -o json
+  register: k8s_version_output
+  changed_when: false
+
+- name: Parse Kubernetes version
+  ansible.builtin.set_fact:
+    k8s_server_version: "{{ (k8s_version_output.stdout | from_json).serverVersion.gitVersion }}"
+
+- name: Verify Kubernetes version (minimum 1.24)
+  ansible.builtin.assert:
+    that:
+      - k8s_server_version is version('v1.24', '>=')
+    fail_msg: "Kubernetes version must be 1.24 or higher for Pod Security Standards"
+    success_msg: "Kubernetes version {{ k8s_server_version }} is supported"
+
+- name: Check if running with appropriate privileges
+  ansible.builtin.stat:
+    path: /etc/kubernetes
+  register: k8s_config_dir
+  failed_when: false
+
+- name: Display pre-flight check summary
+  ansible.builtin.debug:
+    msg:
+      - "Pre-flight checks completed successfully"
+      - "Kubectl version: {{ kubectl_version.stdout }}"
+      - "Kubernetes cluster version: {{ k8s_server_version }}"
+      - "Cluster connectivity: OK"

@@ -1,0 +1,114 @@
+---
+# Network Policy Configuration
+# NIST SP 800-190 - Network Segmentation and Isolation
+
+- name: Verify network policy provider is installed
+  ansible.builtin.command: >
+    kubectl get pods -n kube-system -l k8s-app={{ k8s_network_policy_provider }}
+  register: network_provider_check
+  changed_when: false
+  failed_when: false
+
+- name: Deploy default deny-all network policy for namespaces
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: default-deny-all
+        namespace: "{{ item }}"
+      spec:
+        podSelector: {}
+        policyTypes:
+          - Ingress
+          - Egress
+  loop:
+    - default
+    - kube-public
+  when: k8s_default_network_policy_enabled | bool
+
+- name: Create allow-dns network policy
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: allow-dns
+        namespace: "{{ item }}"
+      spec:
+        podSelector: {}
+        policyTypes:
+          - Egress
+        egress:
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    name: kube-system
+            ports:
+              - protocol: UDP
+                port: 53
+              - protocol: TCP
+                port: 53
+  loop:
+    - default
+    - kube-public
+  when: k8s_default_network_policy_enabled | bool
+
+- name: Create allow-to-apiserver network policy
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: allow-to-apiserver
+        namespace: "{{ item }}"
+      spec:
+        podSelector: {}
+        policyTypes:
+          - Egress
+        egress:
+          - to:
+              - namespaceSelector: {}
+            ports:
+              - protocol: TCP
+                port: 6443
+  loop:
+    - default
+  when: k8s_default_network_policy_enabled | bool
+
+- name: Protect kube-system namespace with network policy
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: kube-system-deny-ingress
+        namespace: kube-system
+      spec:
+        podSelector: {}
+        policyTypes:
+          - Ingress
+        ingress:
+          - from:
+              - namespaceSelector:
+                  matchLabels:
+                    name: kube-system
+
+- name: Verify network policies are applied
+  ansible.builtin.command: >
+    kubectl get networkpolicies --all-namespaces
+  register: netpol_verification
+  changed_when: false
+
+- name: Display network policy status
+  ansible.builtin.debug:
+    msg:
+      - "Network policies configured"
+      - "Provider: {{ k8s_network_policy_provider }}"
+      - "Default deny-all: {{ 'Enabled' if k8s_default_network_policy_enabled else 'Disabled' }}"
+      - "DNS access: Allowed"
+      - "API server access: Allowed"

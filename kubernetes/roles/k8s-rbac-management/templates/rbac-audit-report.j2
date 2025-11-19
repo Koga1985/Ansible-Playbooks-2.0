@@ -1,0 +1,43 @@
+Kubernetes RBAC Audit Report
+=============================
+Generated: {{ ansible_date_time.iso8601 }}
+Cluster: {{ k8s_server_version | default('Unknown') }}
+
+SUMMARY
+-------
+Total RoleBindings: {{ (all_rolebindings.stdout | from_json).items | length }}
+Total ClusterRoleBindings: {{ (all_clusterrolebindings.stdout | from_json).items | length }}
+System:masters bindings: {{ system_masters_bindings.stdout_lines | length }}
+ServiceAccounts with cluster-admin: {{ sa_cluster_admin.stdout_lines | length }}
+Roles with wildcard permissions: {{ wildcard_permissions.stdout_lines | length }}
+
+FINDINGS
+--------
+{% if system_masters_bindings.stdout_lines | length > 0 %}
+⚠ WARNING: System:masters group bindings found
+{% for binding in system_masters_bindings.stdout_lines %}
+  - {{ binding }}
+{% endfor %}
+{% endif %}
+
+{% if sa_cluster_admin.stdout_lines | length > 0 %}
+⚠ WARNING: ServiceAccounts with cluster-admin role
+{% for sa in sa_cluster_admin.stdout_lines %}
+  - {{ sa }}
+{% endfor %}
+{% endif %}
+
+{% if wildcard_permissions.stdout_lines | length > 0 %}
+ℹ INFO: Roles with wildcard (*) permissions
+{% for role in wildcard_permissions.stdout_lines %}
+  - {{ role }}
+{% endfor %}
+{% endif %}
+
+RECOMMENDATIONS
+---------------
+1. Review and minimize cluster-admin role bindings
+2. Remove system:masters group usage
+3. Implement least privilege principle for all service accounts
+4. Conduct RBAC review every {{ k8s_rbac_review_interval_days }} days
+5. Use namespaced roles instead of cluster roles where possible

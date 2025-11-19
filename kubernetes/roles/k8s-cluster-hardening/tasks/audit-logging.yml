@@ -1,0 +1,125 @@
+---
+# Audit Logging Configuration
+# STIG V-242459, V-242460, V-242461 and NIST SP 800-92
+
+- name: Ensure audit log directory exists
+  ansible.builtin.file:
+    path: "{{ k8s_api_server_audit_log_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Deploy audit policy
+  ansible.builtin.template:
+    src: audit-policy.yaml.j2
+    dest: "{{ k8s_api_server_audit_policy_file }}"
+    owner: root
+    group: root
+    mode: '0600'
+    backup: true
+  notify: restart kube-apiserver
+
+- name: Configure log rotation for audit logs
+  ansible.builtin.template:
+    src: audit-log-rotation.conf.j2
+    dest: /etc/logrotate.d/kubernetes-audit
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Verify audit log file exists and has correct permissions (STIG V-242459)
+  ansible.builtin.file:
+    path: "{{ k8s_api_server_audit_log_path }}"
+    state: touch
+    owner: root
+    group: root
+    mode: '0600'
+    modification_time: preserve
+    access_time: preserve
+
+- name: Check if audit logging is active
+  ansible.builtin.stat:
+    path: "{{ k8s_api_server_audit_log_path }}"
+  register: audit_log_file
+
+- name: Verify audit logs are being written (STIG V-242460)
+  ansible.builtin.shell: |
+    if [ -f "{{ k8s_api_server_audit_log_path }}" ]; then
+      find "{{ k8s_api_server_audit_log_path }}" -mmin -5 | grep -q .
+      echo $?
+    else
+      echo "1"
+    fi
+  register: audit_log_recent
+  changed_when: false
+  failed_when: false
+
+- name: Configure audit webhook (optional)
+  when: k8s_audit_webhook_enabled | default(false)
+  block:
+    - name: Deploy audit webhook configuration
+      ansible.builtin.template:
+        src: audit-webhook-config.yaml.j2
+        dest: /etc/kubernetes/audit-webhook-config.yaml
+        owner: root
+        group: root
+        mode: '0600'
+      notify: restart kube-apiserver
+
+- name: Set up audit log monitoring with auditd
+  when: ansible_os_family in ['RedHat', 'Debian']
+  block:
+    - name: Ensure auditd is installed
+      ansible.builtin.package:
+        name: "{{ 'audit' if ansible_os_family == 'RedHat' else 'auditd' }}"
+        state: present
+
+    - name: Configure auditd rules for Kubernetes
+      ansible.builtin.template:
+        src: kubernetes-audit.rules.j2
+        dest: /etc/audit/rules.d/kubernetes.rules
+        owner: root
+        group: root
+        mode: '0600'
+      notify: restart auditd
+
+    - name: Ensure auditd service is enabled and running
+      ansible.builtin.systemd:
+        name: auditd
+        enabled: true
+        state: started
+
+- name: Configure rsyslog for centralized logging (NIST SP 800-92)
+  when: k8s_centralized_logging_enabled | default(false)
+  block:
+    - name: Deploy rsyslog configuration for Kubernetes
+      ansible.builtin.template:
+        src: rsyslog-kubernetes.conf.j2
+        dest: /etc/rsyslog.d/30-kubernetes.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart rsyslog
+
+- name: Verify audit policy compliance
+  ansible.builtin.shell: |
+    if [ -f "{{ k8s_api_server_audit_policy_file }}" ]; then
+      grep -q "level: RequestResponse" "{{ k8s_api_server_audit_policy_file }}"
+      echo $?
+    else
+      echo "1"
+    fi
+  register: audit_policy_check
+  changed_when: false
+  failed_when: false
+
+- name: Display audit logging status
+  ansible.builtin.debug:
+    msg:
+      - "Audit logging configuration applied"
+      - "Audit log path: {{ k8s_api_server_audit_log_path }}"
+      - "Audit policy file: {{ k8s_api_server_audit_policy_file }}"
+      - "Log max age: {{ k8s_api_server_audit_log_maxage }} days"
+      - "Log max backups: {{ k8s_api_server_audit_log_maxbackup }}"
+      - "Audit logs active: {{ 'Yes' if audit_log_file.stat.exists else 'No' }}"

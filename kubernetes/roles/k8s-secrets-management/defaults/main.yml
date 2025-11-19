@@ -1,0 +1,54 @@
+---
+# Secrets Management Configuration
+# STIG V-242462, V-242463
+
+# Secret Management
+k8s_secrets_encryption_enabled: true
+k8s_secrets_rotation_enabled: false
+k8s_secrets_rotation_days: 90
+
+# External Secrets Integration
+k8s_external_secrets_enabled: false
+k8s_external_secrets_provider: vault  # vault, aws, azure, gcp
+
+# Sealed Secrets
+k8s_sealed_secrets_enabled: false
+k8s_sealed_secrets_namespace: kube-system
+
+# Secret Scanning
+k8s_scan_for_exposed_secrets: true
+k8s_prevent_secret_in_logs: true
+
+# RBAC for Secrets
+k8s_restrict_secret_access: true
+k8s_audit_secret_access: true
+
+# Secret Types to Manage
+k8s_secrets:
+  # Example secrets - replace with actual values
+  # - name: db-credentials
+  #   namespace: production
+  #   type: Opaque
+  #   data:
+  #     username: YWRtaW4=  # base64 encoded
+  #     password: cGFzc3dvcmQ=  # base64 encoded
+
+# Image Pull Secrets
+k8s_image_pull_secrets: []
+  # - name: registry-credentials
+  #   namespace: default
+  #   registry: registry1.dso.mil
+  #   username: serviceaccount
+  #   password: secret
+  #   email: devops@example.com
+
+# TLS Secrets
+k8s_tls_secrets: []
+  # - name: app-tls
+  #   namespace: production
+  #   cert_path: /path/to/tls.crt
+  #   key_path: /path/to/tls.key
+
+# Service Account Tokens
+k8s_manage_sa_tokens: true
+k8s_sa_token_expiration: 3600  # seconds

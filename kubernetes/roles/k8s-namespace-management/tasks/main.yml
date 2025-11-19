@@ -1,0 +1,101 @@
+---
+# Main tasks for namespace management
+
+- name: Create namespaces
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ item.name }}"
+        labels: "{{ item.labels | default({}) }}"
+        annotations: "{{ item.annotations | default({}) }}"
+  loop: "{{ k8s_namespaces }}"
+  tags:
+    - namespaces
+
+- name: Apply resource quotas
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ResourceQuota
+      metadata:
+        name: "{{ item.namespace }}-quota"
+        namespace: "{{ item.namespace }}"
+      spec:
+        hard: "{{ item.hard }}"
+  loop: "{{ k8s_resource_quotas }}"
+  when: k8s_enable_resource_quotas | bool
+  tags:
+    - quotas
+
+- name: Apply limit ranges
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: LimitRange
+      metadata:
+        name: "{{ item.namespace }}-limits"
+        namespace: "{{ item.namespace }}"
+      spec:
+        limits: "{{ item.limits }}"
+  loop: "{{ k8s_limit_ranges }}"
+  when: k8s_enable_limit_ranges | bool
+  tags:
+    - limits
+
+- name: Apply default network policies
+  when: k8s_namespace_network_policies | bool
+  block:
+    - name: Create default deny-all network policy
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: default-deny-all
+            namespace: "{{ item.name }}"
+          spec:
+            podSelector: {}
+            policyTypes:
+              - Ingress
+              - Egress
+      loop: "{{ k8s_namespaces }}"
+      when: k8s_default_deny_all | bool
+
+    - name: Create allow-dns network policy
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: allow-dns
+            namespace: "{{ item.name }}"
+          spec:
+            podSelector: {}
+            policyTypes:
+              - Egress
+            egress:
+              - to:
+                  - namespaceSelector:
+                      matchLabels:
+                        name: kube-system
+                ports:
+                  - protocol: UDP
+                    port: 53
+      loop: "{{ k8s_namespaces }}"
+  tags:
+    - network-policies
+
+- name: Display namespace summary
+  ansible.builtin.debug:
+    msg:
+      - "Namespace management complete"
+      - "Created namespaces: {{ k8s_namespaces | length }}"
+      - "Resource quotas applied: {{ k8s_resource_quotas | length }}"
+      - "Limit ranges applied: {{ k8s_limit_ranges | length }}"

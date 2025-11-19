@@ -1,0 +1,10 @@
+{
+  "auths": {
+    "{{ item.registry }}": {
+      "username": "{{ item.username }}",
+      "password": "{{ item.password }}",
+      "email": "{{ item.email }}",
+      "auth": "{{ (item.username + ':' + item.password) | b64encode }}"
+    }
+  }
+}

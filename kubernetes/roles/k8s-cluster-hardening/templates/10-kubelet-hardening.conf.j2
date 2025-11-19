@@ -1,0 +1,17 @@
+# Kubelet Service Hardening Drop-in
+# STIG Compliance
+
+[Service]
+# Ensure kubelet uses configuration file
+Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+
+# Additional security flags
+Environment="KUBELET_EXTRA_ARGS=--tls-cert-file={{ k8s_kubelet_tls_cert_file }} --tls-private-key-file={{ k8s_kubelet_tls_private_key_file }}"
+
+# Resource limits for kubelet itself
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Restart policy
+Restart=always
+RestartSec=5s

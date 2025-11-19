@@ -1,0 +1,31 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Verify audit policy file exists
+      ansible.builtin.stat:
+        path: /etc/kubernetes/audit-policy.yaml
+      register: audit_policy
+      failed_when: not audit_policy.stat.exists
+
+    - name: Verify encryption config exists
+      ansible.builtin.stat:
+        path: /etc/kubernetes/encryption-config.yaml
+      register: encryption_config
+      failed_when: not encryption_config.stat.exists
+
+    - name: Verify kubelet config exists
+      ansible.builtin.stat:
+        path: /var/lib/kubelet/config.yaml
+      register: kubelet_config
+      failed_when: not kubelet_config.stat.exists
+
+    - name: Display verification results
+      ansible.builtin.debug:
+        msg:
+          - "Audit policy: {{ 'Present' if audit_policy.stat.exists else 'Missing' }}"
+          - "Encryption config: {{ 'Present' if encryption_config.stat.exists else 'Missing' }}"
+          - "Kubelet config: {{ 'Present' if kubelet_config.stat.exists else 'Missing' }}"
